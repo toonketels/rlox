@@ -1,8 +1,8 @@
-use crate::chunk::{Chunk, OpCode};
+use crate::chunk::Chunk;
 use crate::codes::Byte;
+use crate::opcode::OpCode;
 
 impl Chunk {
-
     pub fn disassemble(&self, name: &str) {
         println!("== {} ==", name);
 

@@ -1,26 +1,8 @@
-use crate::chunk::OpCode::{Constant, Return};
 use crate::codes::{Byte, Codes};
 use crate::constants::{Constants, Value};
 use crate::lines::Lines;
-
-#[derive(Debug)]
-#[repr(u8)]
-pub enum OpCode {
-    Constant,
-    Return,
-}
-
-impl TryFrom<Byte> for OpCode {
-    type Error = ();
-
-    fn try_from(value: Byte) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Constant),
-            1 => Ok(Return),
-            _ => Err(()),
-        }
-    }
-}
+use crate::opcode::OpCode;
+use crate::opcode::OpCode::Constant;
 
 #[derive(Debug)]
 pub struct Chunk {

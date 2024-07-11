@@ -1,5 +1,6 @@
-use rlox::chunk::OpCode::Return;
-use rlox::chunk::{Chunk, OpCode};
+use rlox::chunk::Chunk;
+use rlox::opcode::OpCode;
+use rlox::opcode::OpCode::Return;
 
 fn main() {
     let mut x = Chunk::new();
