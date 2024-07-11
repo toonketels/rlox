@@ -1,3 +1,5 @@
+/// Constants contain all the constants in use by the program.
+
 pub type Value = f64;
 #[derive(Debug)]
 pub(crate) struct Constants(Vec<Value>);

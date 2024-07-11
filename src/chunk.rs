@@ -1,4 +1,5 @@
 use crate::chunk::OpCode::{Constant, Return};
+use crate::codes::{Byte, Codes};
 use crate::constants::{Constants, Value};
 use crate::lines::Lines;
 
@@ -21,11 +22,9 @@ impl TryFrom<Byte> for OpCode {
     }
 }
 
-type Byte = u8;
-
 #[derive(Debug)]
 pub struct Chunk {
-    code: Vec<Byte>,
+    code: Codes,
     constants: Constants,
     // Tracks the src line the corresponding opcode refers to for error reporting
     lines: Lines,
@@ -40,16 +39,16 @@ impl Default for Chunk {
 impl Chunk {
     pub fn new() -> Self {
         Chunk {
-            code: Vec::new(),
+            code: Codes::new(),
             constants: Constants::new(),
             lines: Lines::new(),
         }
     }
 
     fn write_byte(&mut self, byte: Byte, line: usize) {
-        self.code.push(byte);
+        let at = self.code.add(byte);
         // Keeps track which src line this belongs to
-        self.lines.insert(self.code.len() - 1, line);
+        self.lines.insert(at, line);
     }
 
     fn add_constant(&mut self, value: Value) -> usize {
@@ -81,18 +80,18 @@ impl Chunk {
         }
     }
 
-    // Returns the next instruction
-    fn disassemble_instruction(&self, byte: &Byte, at: usize) -> usize {
+    // Returns the next instruction location
+    fn disassemble_instruction(&self, byte: Byte, at: usize) -> usize {
         let line = self.lines.at(at);
 
-        match OpCode::try_from(*byte) {
+        match OpCode::try_from(byte) {
             Ok(OpCode::Constant) => {
                 let i = self
                     .code
                     .get(at + 1)
                     .unwrap_or_else(|| panic!("Constant at index {:?} should exist", at + 1));
 
-                let index = *i as usize;
+                let index = i as usize;
 
                 let c = self.constants.at(index);
 
