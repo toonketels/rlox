@@ -1,4 +1,5 @@
 use crate::chunk::OpCode::{Constant, Return};
+use crate::constants::{Constants, Value};
 use crate::lines::Lines;
 
 #[derive(Debug)]
@@ -21,12 +22,11 @@ impl TryFrom<Byte> for OpCode {
 }
 
 type Byte = u8;
-type Value = f64;
 
 #[derive(Debug)]
 pub struct Chunk {
     code: Vec<Byte>,
-    constants: Vec<Value>,
+    constants: Constants,
     // Tracks the src line the corresponding opcode refers to for error reporting
     lines: Lines,
 }
@@ -41,7 +41,7 @@ impl Chunk {
     pub fn new() -> Self {
         Chunk {
             code: Vec::new(),
-            constants: Vec::new(),
+            constants: Constants::new(),
             lines: Lines::new(),
         }
     }
@@ -53,8 +53,7 @@ impl Chunk {
     }
 
     fn add_constant(&mut self, value: Value) -> usize {
-        self.constants.push(value);
-        self.constants.len() - 1
+        self.constants.add(value)
     }
 
     pub fn write_code(&mut self, op_code: OpCode, line: usize) {
@@ -95,10 +94,7 @@ impl Chunk {
 
                 let index = *i as usize;
 
-                let c = self
-                    .constants
-                    .get(index)
-                    .unwrap_or_else(|| panic!("Constant at index {:?} should exist", index));
+                let c = self.constants.at(index);
 
                 println!("{:8} {:8} | Constant {:?}", at, line, c);
 
