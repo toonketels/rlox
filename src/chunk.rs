@@ -49,4 +49,15 @@ impl Chunk {
         self.write_code(Constant, line);
         self.write_byte(at as Byte, line);
     }
+
+    pub fn read_byte(&self, index: usize) -> Option<Byte> {
+        self.code.get(index)
+    }
+
+    pub fn read_constant(&self, index: usize) -> Option<Value> {
+        let i = self.read_byte(index)?;
+        let index = i as usize;
+
+        self.constants.get(index)
+    }
 }

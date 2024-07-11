@@ -1,7 +1,9 @@
+extern crate core;
+
 pub mod chunk;
 mod codes;
 mod constants;
-mod lines;
-
 mod disassemble;
+mod lines;
 pub mod opcode;
+pub mod vm;

@@ -1,16 +1,17 @@
 use rlox::chunk::Chunk;
-use rlox::opcode::OpCode;
 use rlox::opcode::OpCode::Return;
+use rlox::vm::{interpret, InterpretError};
 
-fn main() {
+fn main() -> Result<(), InterpretError> {
     let mut x = Chunk::new();
 
     x.write_constant(54.0, 1);
     x.write_code(Return, 2);
 
-    x.disassemble("my program");
+    x.disassemble("program");
 
-    println!("Size of op_codes: {}", std::mem::size_of::<OpCode>());
+    println!();
+    println!("== VM Run ==");
 
-    println!("{:?}", x)
+    interpret(&x)
 }

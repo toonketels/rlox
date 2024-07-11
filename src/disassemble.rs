@@ -8,7 +8,7 @@ impl Chunk {
 
         let mut n = 0;
         loop {
-            let Some(code) = self.code.get(n) else {
+            let Some(code) = self.read_byte(n) else {
                 break;
             };
             n = self.disassemble_instruction(code, n);
@@ -16,19 +16,14 @@ impl Chunk {
     }
 
     // Returns the next instruction location
-    fn disassemble_instruction(&self, byte: Byte, at: usize) -> usize {
+    pub fn disassemble_instruction(&self, byte: Byte, at: usize) -> usize {
         let line = self.lines.at(at);
 
         match OpCode::try_from(byte) {
             Ok(OpCode::Constant) => {
-                let i = self
-                    .code
-                    .get(at + 1)
+                let c = self
+                    .read_constant(at + 1)
                     .unwrap_or_else(|| panic!("Constant at index {:?} should exist", at + 1));
-
-                let index = i as usize;
-
-                let c = self.constants.at(index);
 
                 println!("{:8} {:8} | Constant {:?}", at, line, c);
 

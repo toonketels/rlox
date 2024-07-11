@@ -15,12 +15,14 @@ impl Constants {
         self.0.len() - 1
     }
 
-    pub fn at(&self, index: usize) -> Value {
-        let value = self
-            .0
-            .get(index)
-            .unwrap_or_else(|| panic!("Constant at index {:?} should exist", index));
+    pub fn get(&self, index: usize) -> Option<Value> {
+        self.0.get(index).copied()
+    }
 
-        *value
+    pub fn at(&self, index: usize) -> Value {
+        self.0
+            .get(index)
+            .copied()
+            .unwrap_or_else(|| panic!("Constant at index {:?} should exist", index))
     }
 }
