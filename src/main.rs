@@ -7,7 +7,7 @@ fn main() {
     x.write_constant(54.0, 1);
     x.write_code(Return, 2);
 
-    x.disassemble_chunk("my program");
+    x.disassemble("my program");
 
     println!("Size of op_codes: {}", std::mem::size_of::<OpCode>());
 

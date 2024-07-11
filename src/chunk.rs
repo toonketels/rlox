@@ -24,10 +24,10 @@ impl TryFrom<Byte> for OpCode {
 
 #[derive(Debug)]
 pub struct Chunk {
-    code: Codes,
-    constants: Constants,
+    pub(crate) code: Codes,
+    pub(crate) constants: Constants,
     // Tracks the src line the corresponding opcode refers to for error reporting
-    lines: Lines,
+    pub(crate) lines: Lines,
 }
 
 impl Default for Chunk {
@@ -66,47 +66,5 @@ impl Chunk {
 
         self.write_code(Constant, line);
         self.write_byte(at as Byte, line);
-    }
-
-    pub fn disassemble_chunk(&self, name: &str) {
-        println!("== {} ==", name);
-
-        let mut n = 0;
-        loop {
-            let Some(code) = self.code.get(n) else {
-                break;
-            };
-            n = self.disassemble_instruction(code, n);
-        }
-    }
-
-    // Returns the next instruction location
-    fn disassemble_instruction(&self, byte: Byte, at: usize) -> usize {
-        let line = self.lines.at(at);
-
-        match OpCode::try_from(byte) {
-            Ok(OpCode::Constant) => {
-                let i = self
-                    .code
-                    .get(at + 1)
-                    .unwrap_or_else(|| panic!("Constant at index {:?} should exist", at + 1));
-
-                let index = i as usize;
-
-                let c = self.constants.at(index);
-
-                println!("{:8} {:8} | Constant {:?}", at, line, c);
-
-                at + 2
-            }
-            Ok(OpCode::Return) => {
-                println!("{:8} {:8} | Return", at, line);
-                at + 1
-            }
-
-            Err(_) => {
-                panic!("Not an opcode")
-            }
-        }
     }
 }
