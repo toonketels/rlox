@@ -1,4 +1,5 @@
 use crate::chunk::OpCode::{Constant, Return};
+use crate::lines::Lines;
 
 #[derive(Debug)]
 #[repr(u8)]
@@ -27,7 +28,7 @@ pub struct Chunk {
     code: Vec<Byte>,
     constants: Vec<Value>,
     // Tracks the src line the corresponding opcode refers to for error reporting
-    lines: Vec<usize>,
+    lines: Lines,
 }
 
 impl Default for Chunk {
@@ -41,7 +42,7 @@ impl Chunk {
         Chunk {
             code: Vec::new(),
             constants: Vec::new(),
-            lines: Vec::new(),
+            lines: Lines::new(),
         }
     }
 
@@ -83,10 +84,7 @@ impl Chunk {
 
     // Returns the next instruction
     fn disassemble_instruction(&self, byte: &Byte, at: usize) -> usize {
-        let line = self
-            .lines
-            .get(at)
-            .unwrap_or_else(|| panic!("Line at index {:?} should exist", at));
+        let line = self.lines.at(at);
 
         match OpCode::try_from(*byte) {
             Ok(OpCode::Constant) => {
