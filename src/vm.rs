@@ -2,6 +2,7 @@ use crate::chunk::Chunk;
 use crate::codes::Byte;
 use crate::constants::Value;
 use crate::opcode::OpCode;
+use crate::stack::Stack;
 use crate::vm::InterpretError::RuntimeError;
 use std::fmt::{Display, Formatter};
 
@@ -9,6 +10,7 @@ use std::fmt::{Display, Formatter};
 
 pub struct Vm<'a> {
     chunk: &'a Chunk,
+    stack: Stack,
     ip: usize,
 }
 
@@ -34,7 +36,11 @@ pub fn interpret(chunk: &Chunk) -> Result<(), InterpretError> {
 
 impl<'a> Vm<'a> {
     pub fn new(chunk: &'a Chunk) -> Self {
-        Vm { chunk, ip: 0 }
+        Vm {
+            chunk,
+            stack: Stack::new(),
+            ip: 0,
+        }
     }
 
     /// Returns the next to fetch instruction location and advances the ip
@@ -52,6 +58,14 @@ impl<'a> Vm<'a> {
         self.chunk.read_constant(self.advance())
     }
 
+    fn push_stack(&mut self, value: Value) {
+        self.stack.push(value)
+    }
+
+    fn pop_stack(&mut self) -> Option<Value> {
+        self.stack.pop()
+    }
+
     pub fn run(&mut self) -> Result<(), InterpretError> {
         loop {
             // No more codes to fetch... runtime error
@@ -65,11 +79,14 @@ impl<'a> Vm<'a> {
 
             match code {
                 // We are done
-                OpCode::Return => break Ok(()),
+                OpCode::Return => {
+                    println!("Return: {:?}", self.pop_stack());
+                    break Ok(());
+                }
 
                 OpCode::Constant => {
                     let constant = self.read_constant().ok_or(RuntimeError)?;
-                    println!("constant: {:?}", constant);
+                    self.push_stack(constant);
                 }
             }
         }
