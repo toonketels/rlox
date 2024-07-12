@@ -17,10 +17,12 @@ impl Chunk {
 
     // Returns the next instruction location
     pub fn disassemble_instruction(&self, byte: Byte, at: usize) -> usize {
+        use OpCode::*;
+
         let line = self.lines.at(at);
 
-        match OpCode::try_from(byte) {
-            Ok(OpCode::Constant) => {
+        match OpCode::try_from(byte).expect("Not an opcode") {
+            Constant => {
                 let c = self
                     .read_constant(at + 1)
                     .unwrap_or_else(|| panic!("Constant at index {:?} should exist", at + 1));
@@ -29,14 +31,17 @@ impl Chunk {
 
                 at + 2
             }
-            Ok(OpCode::Return) => {
-                println!("{:8} {:8} | Return", at, line);
-                at + 1
-            }
-
-            Err(_) => {
-                panic!("Not an opcode")
-            }
+            Add => Self::simple_instruction("Add", at, line),
+            Subtract => Self::simple_instruction("Subtract", at, line),
+            Multiply => Self::simple_instruction("Multiply", at, line),
+            Divide => Self::simple_instruction("Divide", at, line),
+            Negate => Self::simple_instruction("Negate", at, line),
+            Return => Self::simple_instruction("Return", at, line),
         }
+    }
+
+    fn simple_instruction(name: &str, at: usize, line: usize) -> usize {
+        println!("{:8} {:8} | {}", at, line, name);
+        at + 1
     }
 }

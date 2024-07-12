@@ -54,41 +54,66 @@ impl<'a> Vm<'a> {
         self.chunk.read_byte(self.advance())
     }
 
-    fn read_constant(&mut self) -> Option<Value> {
-        self.chunk.read_constant(self.advance())
+    fn read_constant(&mut self) -> Result<Value, InterpretError> {
+        self.chunk.read_constant(self.advance()).ok_or(RuntimeError)
     }
 
     fn push_stack(&mut self, value: Value) {
         self.stack.push(value)
     }
 
-    fn pop_stack(&mut self) -> Option<Value> {
-        self.stack.pop()
+    fn pop_stack(&mut self) -> Result<Value, InterpretError> {
+        self.stack.pop().ok_or(RuntimeError)
     }
 
     pub fn run(&mut self) -> Result<(), InterpretError> {
+        macro_rules! binary_op {
+            ($op:tt) => {
+                {
+                    let x = self.pop_stack()?;
+                    let y = self.pop_stack()?;
+                    self.push_stack(x $op y)
+                }
+            };
+        }
+
+        use OpCode::*;
         loop {
-            // No more codes to fetch... runtime error
-            let byte = self.read_byte().ok_or(RuntimeError)?;
-            // Byte is not an opcode... runtime error
-            let code = OpCode::try_from(byte).map_err(|_| RuntimeError)?;
-
-            // This is ugly, because read_byte advances the ip, we need to put it back
-            // for the disassemble instruction
-            self.chunk.disassemble_instruction(byte, self.ip - 1);
-
-            match code {
+            match self.read_decode()? {
                 // We are done
-                OpCode::Return => {
-                    println!("Return: {:?}", self.pop_stack());
+                Return => {
+                    println!("Return: {:?}", self.pop_stack()?);
                     break Ok(());
                 }
 
-                OpCode::Constant => {
-                    let constant = self.read_constant().ok_or(RuntimeError)?;
-                    self.push_stack(constant);
+                // Arithmetic
+                Add => binary_op!(+),
+                Subtract => binary_op!(-),
+                Multiply => binary_op!(*),
+                Divide => binary_op!(/),
+                Negate => {
+                    let x = self.pop_stack()?;
+                    self.push_stack(-x)
+                }
+
+                Constant => {
+                    let x = self.read_constant()?;
+                    self.push_stack(x)
                 }
             }
         }
+    }
+
+    fn read_decode(&mut self) -> Result<OpCode, InterpretError> {
+        // No more codes to fetch... runtime error
+        let byte = self.read_byte().ok_or(RuntimeError)?;
+        // Byte is not an opcode... runtime error
+        let code = OpCode::try_from(byte).map_err(|_| RuntimeError)?;
+
+        // This is ugly, because read_byte advances the ip, we need to put it back
+        // for the disassemble instruction
+        self.chunk.disassemble_instruction(byte, self.ip - 1);
+
+        Ok(code)
     }
 }

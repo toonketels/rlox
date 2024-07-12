@@ -18,11 +18,4 @@ impl Constants {
     pub fn get(&self, index: usize) -> Option<Value> {
         self.0.get(index).copied()
     }
-
-    pub fn at(&self, index: usize) -> Value {
-        self.0
-            .get(index)
-            .copied()
-            .unwrap_or_else(|| panic!("Constant at index {:?} should exist", index))
-    }
 }
