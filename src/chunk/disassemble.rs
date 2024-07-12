@@ -1,6 +1,5 @@
 use crate::chunk::Chunk;
-use crate::codes::Byte;
-use crate::opcode::OpCode;
+use crate::opcode::{Byte, OpCode};
 
 impl Chunk {
     pub fn disassemble(&self, name: &str) {

@@ -1,6 +1,6 @@
-/// Codes is a byte array of machine code
+use crate::opcode::Byte;
 
-pub type Byte = u8;
+/// Codes is a byte array of machine code
 
 #[derive(Debug)]
 pub struct Codes(Vec<Byte>);

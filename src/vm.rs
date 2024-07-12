@@ -1,10 +1,10 @@
 use crate::chunk::Chunk;
-use crate::codes::Byte;
-use crate::constants::Value;
-use crate::opcode::OpCode;
-use crate::stack::Stack;
+use crate::opcode::{Byte, OpCode, Value};
 use crate::vm::InterpretError::RuntimeError;
+use stack::Stack;
 use std::fmt::{Display, Formatter};
+
+mod stack;
 
 /// Virtual machine that executes our program
 

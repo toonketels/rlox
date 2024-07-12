@@ -1,8 +1,13 @@
-use crate::codes::{Byte, Codes};
-use crate::constants::{Constants, Value};
-use crate::lines::Lines;
-use crate::opcode::OpCode;
+mod codes;
+mod constants;
+mod disassemble;
+mod lines;
+
 use crate::opcode::OpCode::Constant;
+use crate::opcode::{Byte, OpCode, Value};
+use codes::Codes;
+use constants::Constants;
+use lines::Lines;
 
 #[derive(Debug)]
 pub struct Chunk {

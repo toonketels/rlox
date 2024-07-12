@@ -1,4 +1,4 @@
-use crate::constants::Value;
+use crate::opcode::Value;
 
 pub struct Stack(Vec<Value>);
 
