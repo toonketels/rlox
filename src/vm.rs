@@ -16,15 +16,25 @@ pub struct Vm<'a> {
 
 #[derive(Debug)]
 pub enum InterpretError {
+    LoadError,
     CompileError,
     RuntimeError,
+    Io(std::io::Error),
+}
+
+impl From<std::io::Error> for InterpretError {
+    fn from(value: std::io::Error) -> Self {
+        InterpretError::Io(value)
+    }
 }
 
 impl Display for InterpretError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match *self {
+        match self {
             InterpretError::CompileError => write!(f, "compilation error"),
-            InterpretError::RuntimeError => write!(f, "compilation error"),
+            InterpretError::RuntimeError => write!(f, "runtime error"),
+            InterpretError::LoadError => write!(f, "load error"),
+            InterpretError::Io(io) => write!(f, "Io error {}", io),
         }
     }
 }
