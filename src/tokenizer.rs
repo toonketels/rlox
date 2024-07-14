@@ -57,6 +57,12 @@ pub struct Token<'a> {
     line: usize,
 }
 
+#[derive(Debug)]
+struct IndexedToken<'a> {
+    token: Token<'a>,
+    index: usize,
+}
+
 impl<'a> Token<'a> {
     pub fn new(kind: TokenKind, source: &'a str, line: usize) -> Self {
         Self { kind, source, line }
@@ -82,8 +88,8 @@ impl<'a> Tokenizer<'a> {
     }
 
     pub fn tokenize(&mut self) -> &Vec<Token<'a>> {
-        while let Some(token) = self.scan() {
-            let advance = token.source.len();
+        while let Some(IndexedToken { token, index }) = self.scan() {
+            let advance = index + token.source.len();
             self.tokens.push(token);
             self.source = &self.source[advance..];
         }
@@ -92,50 +98,60 @@ impl<'a> Tokenizer<'a> {
         &self.tokens
     }
 
-    fn scan(&self) -> Option<Token<'a>> {
+    fn scan(&self) -> Option<IndexedToken<'a>> {
         use TokenKind::*;
 
         macro_rules! make_single_char_token {
-            ($token:ident) => {
-                Token::new($token, &self.source[0..1], self.line)
+            ($token:ident, $index:tt) => {
+                IndexedToken {
+                    token: Token::new($token, &self.source[$index..$index + 1], self.line),
+                    index: $index,
+                }
             };
         }
 
         macro_rules! make_double_char_token {
-            ($token:ident) => {
-                Token::new($token, &self.source[0..2], self.line)
+            ($token:ident, $index:tt) => {
+                IndexedToken {
+                    token: Token::new($token, &self.source[$index..$index + 2], self.line),
+                    index: $index,
+                }
             };
         }
 
-        let mut chars = self.source.chars().peekable();
+        let mut chars = self
+            .source
+            .char_indices()
+            .skip_while(|(_, it)| it.is_whitespace())
+            .peekable();
         match chars.next()? {
-            '(' => Some(make_single_char_token!(LeftParen)),
-            ')' => Some(make_single_char_token!(RightParen)),
-            '{' => Some(make_single_char_token!(LeftBrace)),
-            '}' => Some(make_single_char_token!(RightBrace)),
-            ';' => Some(make_single_char_token!(Semicolon)),
-            ',' => Some(make_single_char_token!(Comma)),
-            '.' => Some(make_single_char_token!(Dot)),
-            '-' => Some(make_single_char_token!(Minus)),
-            '+' => Some(make_single_char_token!(Plus)),
-            '/' => Some(make_single_char_token!(Slash)),
-            '*' => Some(make_single_char_token!(Star)),
+            (i, '(') => Some(make_single_char_token!(LeftParen, i)),
+            (i, ')') => Some(make_single_char_token!(RightParen, i)),
+            (i, '{') => Some(make_single_char_token!(LeftBrace, i)),
+            (i, '}') => Some(make_single_char_token!(RightBrace, i)),
+            (i, ';') => Some(make_single_char_token!(Semicolon, i)),
+            (i, ',') => Some(make_single_char_token!(Comma, i)),
+            (i, '.') => Some(make_single_char_token!(Dot, i)),
+            (i, '-') => Some(make_single_char_token!(Minus, i)),
+            (i, '+') => Some(make_single_char_token!(Plus, i)),
+            (i, '/') => Some(make_single_char_token!(Slash, i)),
+            (i, '*') => Some(make_single_char_token!(Star, i)),
 
-            '!' => match chars.peek().copied() {
-                Some('=') => Some(make_double_char_token!(BangEqual)),
-                _ => Some(make_single_char_token!(Bang)),
+            (i, '!') => match chars.peek().copied() {
+                Some((_, '=')) => Some(make_double_char_token!(BangEqual, i)),
+                _ => Some(make_single_char_token!(Bang, i)),
             },
-            '=' => match chars.peek().copied() {
-                Some('=') => Some(make_double_char_token!(EqualEqual)),
-                _ => Some(make_single_char_token!(Equal)),
+            (i, '=') => match chars.peek().copied() {
+                Some((_, '=')) => Some(make_double_char_token!(EqualEqual, i)),
+                _ => Some(make_single_char_token!(Equal, i)),
             },
-            '<' => match chars.peek().copied() {
-                Some('=') => Some(make_double_char_token!(LessEqual)),
-                _ => Some(make_single_char_token!(Less)),
+            (i, '<') => match chars.peek().copied() {
+                Some((_, '=')) => Some(make_double_char_token!(LessEqual, i)),
+                _ => Some(make_single_char_token!(Less, i)),
             },
-            '>' => match chars.peek().copied() {
-                Some('=') => Some(make_double_char_token!(GreaterEqual)),
-                _ => Some(make_single_char_token!(Greater)),
+            (i, '>') => match chars.peek().copied() {
+                Some((_, '=')) => Some(make_double_char_token!(GreaterEqual, i)),
+                _ => Some(make_single_char_token!(Greater, i)),
             },
             _ => None,
         }
@@ -204,5 +220,50 @@ mod tests {
                 Greater
             )
         );
+    }
+
+    #[test]
+    fn handles_whitespace_1() {
+        let source = "  ()";
+
+        let mut tokenizer = Tokenizer::new(source);
+
+        let r = tokenizer
+            .tokenize()
+            .iter()
+            .map(|it| it.kind)
+            .collect::<Vec<_>>();
+
+        assert_eq!(r, vec!(LeftParen, RightParen));
+    }
+
+    #[test]
+    fn handles_whitespace_2() {
+        let source = "!= =       ==";
+
+        let mut tokenizer = Tokenizer::new(source);
+
+        let r = tokenizer
+            .tokenize()
+            .iter()
+            .map(|it| it.kind)
+            .collect::<Vec<_>>();
+
+        assert_eq!(r, vec!(BangEqual, Equal, EqualEqual));
+    }
+
+    #[test]
+    fn handles_whitespace_3() {
+        let source = "====      ";
+
+        let mut tokenizer = Tokenizer::new(source);
+
+        let r = tokenizer
+            .tokenize()
+            .iter()
+            .map(|it| it.kind)
+            .collect::<Vec<_>>();
+
+        assert_eq!(r, vec!(EqualEqual, EqualEqual));
     }
 }
