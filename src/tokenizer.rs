@@ -163,24 +163,21 @@ mod tests {
     use super::*;
     use crate::tokenizer::TokenKind::*;
 
-    #[test]
-    fn single_tokens() {
-        let source = "(){};,.-+/*";
-
+    fn tokenize(source: &str) -> Vec<TokenKind> {
         let mut tokenizer = Tokenizer::new(source);
-
-        println!("{:?}", tokenizer);
-        println!("{:?}", tokenizer.tokenize());
-        println!("{:?}", tokenizer.tokenize());
 
         let r = tokenizer
             .tokenize()
             .iter()
             .map(|it| it.kind)
             .collect::<Vec<_>>();
+        r
+    }
 
+    #[test]
+    fn single_tokens() {
         assert_eq!(
-            r,
+            tokenize("(){};,.-+/*"),
             vec!(
                 LeftParen, RightParen, LeftBrace, RightBrace, Semicolon, Comma, Dot, Minus, Plus,
                 Slash, Star
@@ -190,22 +187,8 @@ mod tests {
 
     #[test]
     fn possible_double_tokens() {
-        let source = "!=!.===.<=<.>=>";
-
-        let mut tokenizer = Tokenizer::new(source);
-
-        println!("{:?}", tokenizer);
-        println!("{:?}", tokenizer.tokenize());
-        println!("{:?}", tokenizer.tokenize());
-
-        let r = tokenizer
-            .tokenize()
-            .iter()
-            .map(|it| it.kind)
-            .collect::<Vec<_>>();
-
         assert_eq!(
-            r,
+            tokenize("!=!.===.<=<.>=>"),
             vec!(
                 BangEqual,
                 Bang,
@@ -224,46 +207,19 @@ mod tests {
 
     #[test]
     fn handles_whitespace_1() {
-        let source = "  ()";
-
-        let mut tokenizer = Tokenizer::new(source);
-
-        let r = tokenizer
-            .tokenize()
-            .iter()
-            .map(|it| it.kind)
-            .collect::<Vec<_>>();
-
-        assert_eq!(r, vec!(LeftParen, RightParen));
+        assert_eq!(tokenize("  ()"), vec!(LeftParen, RightParen));
     }
 
     #[test]
     fn handles_whitespace_2() {
-        let source = "!= =       ==";
-
-        let mut tokenizer = Tokenizer::new(source);
-
-        let r = tokenizer
-            .tokenize()
-            .iter()
-            .map(|it| it.kind)
-            .collect::<Vec<_>>();
-
-        assert_eq!(r, vec!(BangEqual, Equal, EqualEqual));
+        assert_eq!(
+            tokenize("!= =       =="),
+            vec!(BangEqual, Equal, EqualEqual)
+        );
     }
 
     #[test]
     fn handles_whitespace_3() {
-        let source = "====      ";
-
-        let mut tokenizer = Tokenizer::new(source);
-
-        let r = tokenizer
-            .tokenize()
-            .iter()
-            .map(|it| it.kind)
-            .collect::<Vec<_>>();
-
-        assert_eq!(r, vec!(EqualEqual, EqualEqual));
+        assert_eq!(tokenize("====      "), vec!(EqualEqual, EqualEqual));
     }
 }
