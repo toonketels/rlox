@@ -175,8 +175,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn take_comment(&mut self) {
-        while let Some(it) = self.peek_byte() {
-            self.advance_byte();
+        while let Some(it) = self.take_byte() {
             if it == b'\n' {
                 break;
             }
@@ -213,24 +212,8 @@ impl<'a> Tokenizer<'a> {
     // 1. match 'what'
     // 2. matches on a boundary
     fn match_bytes(&self, what: &str) -> bool {
-        assert!(
-            self.current > 0,
-            "match_bytes should only be called after at least one take"
-        );
-
-        let what_as_bytes = what.as_bytes();
-        let start = self.current - 1;
-        let next = start + what.len();
-
-        if next > self.as_bytes.len() {
-            return false;
-        }
-
-        let is_match = self.as_bytes[start..next]
-            .iter()
-            .enumerate()
-            .all(|(i, v)| *v == what_as_bytes[i]);
-        let is_exact = match self.as_bytes.get(next) {
+        let is_match = self.peek_bytes(what.len()) == Some(what);
+        let is_exact = match self.as_bytes.get(self.current + what.len()) {
             // Any alpha number or _ makes it not a boundary
             Some(it) if it.is_alphabetic_or_underscore() || it.is_ascii_digit() => false,
             Some(_) => true,
@@ -239,7 +222,7 @@ impl<'a> Tokenizer<'a> {
         is_match && is_exact
     }
 
-    fn make_token(&self, kind: TokenKind) -> Token<'a> {
+    fn create_token(&self, kind: TokenKind) -> Token<'a> {
         Token::new(
             kind,
             &self.source[self.checkpoint..self.current],
@@ -248,18 +231,22 @@ impl<'a> Tokenizer<'a> {
         )
     }
 
-    fn make_token_with_length(&mut self, kind: TokenKind, length: usize) -> Token<'a> {
+    fn make_token_with_length(&mut self, kind: TokenKind, length: usize) -> Option<Token<'a>> {
         assert!(length > 0, "token needs to be at least a byte long");
-        self.advance_bytes(length - 1);
-        self.make_token(kind)
+        self.checkpoint();
+        self.advance_bytes(length);
+        Some(self.create_token(kind))
     }
 
     fn make_string(&mut self) -> Option<Token<'a>> {
+        self.checkpoint();
+        // Skip the opening "
+        self.advance_byte();
         // We are not handling newlines in strings as we assume strings are just one line with
         // escaped newline chars in it.
         while let Some(it) = self.take_byte() {
             if it == b'"' {
-                return Some(self.make_token(String));
+                return Some(self.create_token(String));
             }
         }
         // @TODO error unterminated string
@@ -267,6 +254,7 @@ impl<'a> Tokenizer<'a> {
     }
 
     fn make_number(&mut self) -> Option<Token<'a>> {
+        self.checkpoint();
         // We are not handling newlines in strings as we assume strings are just one line with
         // escaped newline chars in it.
         while let Some(it) = self.peek_byte() {
@@ -275,10 +263,11 @@ impl<'a> Tokenizer<'a> {
             }
             self.advance_byte();
         }
-        return Some(self.make_token(Number));
+        return Some(self.create_token(Number));
     }
 
     fn make_identifier(&mut self) -> Option<Token<'a>> {
+        self.checkpoint();
         while let Some(it) = self.peek_byte() {
             if it.is_alphabetic_or_underscore() || it.is_ascii_digit() {
                 self.advance_byte();
@@ -286,73 +275,68 @@ impl<'a> Tokenizer<'a> {
                 break;
             }
         }
-        Some(self.make_token(Identifier))
+        Some(self.create_token(Identifier))
     }
 
     fn token(&mut self) -> Option<Token<'a>> {
         use TokenKind::*;
 
-        self.checkpoint();
-
-        match self.take_byte()? {
+        match self.peek_byte()? {
             it if it.is_ascii_whitespace() => {
-                if it.is_newline() {
-                    self.advance_line();
-                }
                 self.take_whitespace();
                 self.token()
             }
-            b'(' => Some(self.make_token(LeftParen)),
-            b')' => Some(self.make_token(RightParen)),
-            b'{' => Some(self.make_token(LeftBrace)),
-            b'}' => Some(self.make_token(RightBrace)),
-            b';' => Some(self.make_token(Semicolon)),
-            b',' => Some(self.make_token(Comma)),
-            b'.' => Some(self.make_token(Dot)),
-            b'-' => Some(self.make_token(Minus)),
-            b'+' => Some(self.make_token(Plus)),
-            b'*' => Some(self.make_token(Star)),
-            b'/' => match self.peek_byte() {
-                Some(b'/') => {
+            b'(' => self.make_token_with_length(LeftParen, 1),
+            b')' => self.make_token_with_length(RightParen, 1),
+            b'{' => self.make_token_with_length(LeftBrace, 1),
+            b'}' => self.make_token_with_length(RightBrace, 1),
+            b';' => self.make_token_with_length(Semicolon, 1),
+            b',' => self.make_token_with_length(Comma, 1),
+            b'.' => self.make_token_with_length(Dot, 1),
+            b'-' => self.make_token_with_length(Minus, 1),
+            b'+' => self.make_token_with_length(Plus, 1),
+            b'*' => self.make_token_with_length(Star, 1),
+            b'/' => match self.peek_bytes(2) {
+                Some("//") => {
                     self.take_comment();
                     self.token()
                 }
-                _ => Some(self.make_token(Slash)),
+                _ => self.make_token_with_length(Slash, 1),
             },
-            b'!' => match self.peek_byte() {
-                Some(b'=') => Some(self.make_token_with_length(BangEqual, 2)),
-                _ => Some(self.make_token(Bang)),
+            b'!' => match self.peek_bytes(2) {
+                Some("!=") => self.make_token_with_length(BangEqual, 2),
+                _ => self.make_token_with_length(Bang, 1),
             },
-            b'=' => match self.peek_byte() {
-                Some(b'=') => Some(self.make_token_with_length(EqualEqual, 2)),
-                _ => Some(self.make_token(Equal)),
+            b'=' => match self.peek_bytes(2) {
+                Some("==") => self.make_token_with_length(EqualEqual, 2),
+                _ => self.make_token_with_length(Equal, 1),
             },
-            b'<' => match self.peek_byte() {
-                Some(b'=') => Some(self.make_token_with_length(LessEqual, 2)),
-                _ => Some(self.make_token(Less)),
+            b'<' => match self.peek_bytes(2) {
+                Some("<=") => self.make_token_with_length(LessEqual, 2),
+                _ => self.make_token_with_length(Less, 1),
             },
-            b'>' => match self.peek_byte() {
-                Some(b'=') => Some(self.make_token_with_length(GreaterEqual, 2)),
-                _ => Some(self.make_token(Greater)),
+            b'>' => match self.peek_bytes(2) {
+                Some(">=") => self.make_token_with_length(GreaterEqual, 2),
+                _ => self.make_token_with_length(Greater, 1),
             },
             b'"' => self.make_string(),
             it if it.is_ascii_digit() => self.make_number(),
-            _ if self.match_bytes("and") => Some(self.make_token_with_length(And, 3)),
-            _ if self.match_bytes("class") => Some(self.make_token_with_length(Class, 5)),
-            _ if self.match_bytes("else") => Some(self.make_token_with_length(Else, 4)),
-            _ if self.match_bytes("if") => Some(self.make_token_with_length(If, 2)),
-            _ if self.match_bytes("nil") => Some(self.make_token_with_length(Nil, 3)),
-            _ if self.match_bytes("or") => Some(self.make_token_with_length(Or, 2)),
-            _ if self.match_bytes("print") => Some(self.make_token_with_length(Print, 5)),
-            _ if self.match_bytes("return") => Some(self.make_token_with_length(Return, 6)),
-            _ if self.match_bytes("super") => Some(self.make_token_with_length(Super, 5)),
-            _ if self.match_bytes("var") => Some(self.make_token_with_length(Var, 3)),
-            _ if self.match_bytes("while") => Some(self.make_token_with_length(While, 5)),
-            _ if self.match_bytes("false") => Some(self.make_token_with_length(False, 5)),
-            _ if self.match_bytes("for") => Some(self.make_token_with_length(For, 3)),
-            _ if self.match_bytes("fun") => Some(self.make_token_with_length(Fun, 3)),
-            _ if self.match_bytes("this") => Some(self.make_token_with_length(This, 4)),
-            _ if self.match_bytes("true") => Some(self.make_token_with_length(True, 4)),
+            _ if self.match_bytes("and") => self.make_token_with_length(And, 3),
+            _ if self.match_bytes("class") => self.make_token_with_length(Class, 5),
+            _ if self.match_bytes("else") => self.make_token_with_length(Else, 4),
+            _ if self.match_bytes("if") => self.make_token_with_length(If, 2),
+            _ if self.match_bytes("nil") => self.make_token_with_length(Nil, 3),
+            _ if self.match_bytes("or") => self.make_token_with_length(Or, 2),
+            _ if self.match_bytes("print") => self.make_token_with_length(Print, 5),
+            _ if self.match_bytes("return") => self.make_token_with_length(Return, 6),
+            _ if self.match_bytes("super") => self.make_token_with_length(Super, 5),
+            _ if self.match_bytes("var") => self.make_token_with_length(Var, 3),
+            _ if self.match_bytes("while") => self.make_token_with_length(While, 5),
+            _ if self.match_bytes("false") => self.make_token_with_length(False, 5),
+            _ if self.match_bytes("for") => self.make_token_with_length(For, 3),
+            _ if self.match_bytes("fun") => self.make_token_with_length(Fun, 3),
+            _ if self.match_bytes("this") => self.make_token_with_length(This, 4),
+            _ if self.match_bytes("true") => self.make_token_with_length(True, 4),
             it if it.is_alphabetic_or_underscore() => self.make_identifier(),
             _ => None,
         }
@@ -446,13 +430,13 @@ mod tests {
         assert_eq!(t.checkpoint(), Some(b'h'));
         assert_eq!(t.take_byte(), Some(b'h'));
         assert_eq!(t.take_bytes(4), Some("ello"));
-        assert_eq!(t.make_token(String), Token::new(String, "hello", 0, 0));
+        assert_eq!(t.create_token(String), Token::new(String, "hello", 0, 0));
 
         t.advance_byte();
 
         t.checkpoint();
         t.take_bytes(5);
-        assert_eq!(t.make_token(String), Token::new(String, "world", 6, 0));
+        assert_eq!(t.create_token(String), Token::new(String, "world", 6, 0));
     }
 
     #[test]
@@ -539,6 +523,11 @@ mod tests {
     }
 
     #[test]
+    fn handles_comments_3() {
+        assert_eq!(tokenize("// ok this is a comment \n!"), vec!(Bang));
+    }
+
+    #[test]
     fn handles_newlines() {
         let mut t = Tokenizer::new("*\n!\n.");
         assert_eq!(t.next(), Some(Token::new(Star, "*", 0, 0)));
@@ -551,6 +540,13 @@ mod tests {
     fn handles_strings() {
         let mut t = Tokenizer::new("\"Hello world!\"");
         assert_eq!(t.next(), Some(Token::new(String, "\"Hello world!\"", 0, 0)));
+    }
+
+    #[test]
+    fn handles_strings_() {
+        let mut t = Tokenizer::new("!= \"Hello world!\"");
+        assert_eq!(t.next(), Some(Token::new(BangEqual, "!=", 0, 0)));
+        assert_eq!(t.next(), Some(Token::new(String, "\"Hello world!\"", 3, 0)));
     }
 
     #[test]
@@ -570,6 +566,13 @@ mod tests {
     fn handles_numbers_2() {
         let mut t = Tokenizer::new("1");
         assert_eq!(t.next(), Some(Token::new(Number, "1", 0, 0)));
+    }
+
+    #[test]
+    fn handles_numbers_3() {
+        let mut t = Tokenizer::new("!1");
+        assert_eq!(t.next(), Some(Token::new(Bang, "!", 0, 0)));
+        assert_eq!(t.next(), Some(Token::new(Number, "1", 1, 0)));
     }
 
     #[test]
