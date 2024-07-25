@@ -71,10 +71,10 @@ impl ByteExtensions for u8 {
 
 #[derive(PartialEq, Debug)]
 pub struct Token<'a> {
-    kind: TokenKind,
-    source: &'a str,
+    pub(crate) kind: TokenKind,
+    pub(crate) source: &'a str,
     offset: usize,
-    line: usize,
+    pub(crate) line: usize,
 }
 
 impl<'a> Token<'a> {
@@ -86,8 +86,17 @@ impl<'a> Token<'a> {
             line,
         }
     }
+
+    pub fn is_kind(&self, kind: TokenKind) -> bool {
+        self.kind == kind
+    }
+
+    pub fn line(&self) -> usize {
+        self.line
+    }
 }
 
+#[derive(Debug)]
 pub struct Tokenizer<'a> {
     source: &'a str,
     as_bytes: &'a [u8],

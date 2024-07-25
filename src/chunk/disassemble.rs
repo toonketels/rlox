@@ -1,21 +1,46 @@
 use crate::chunk::Chunk;
 use crate::opcode::{Byte, OpCode};
+use std::io;
+use std::io::{Cursor, Write};
 
 impl Chunk {
     pub fn disassemble(&self, name: &str) {
-        println!("== {} ==", name);
+        let mut buffer = io::stdout();
+        self.disassemble_buffer(&mut buffer, name)
+    }
+
+    pub fn disassemble_into_string(&self, name: &str) -> String {
+        let mut buffer: Cursor<Vec<u8>> = Cursor::new(Vec::new());
+        self.disassemble_buffer(&mut buffer, name);
+
+        String::from_utf8(buffer.into_inner()).unwrap()
+    }
+
+    pub fn disassemble_instruction(&self, byte: Byte, at: usize) -> usize {
+        let mut buffer = io::stdout();
+        self.disassemble_instruction_buffer(&mut buffer, byte, at)
+    }
+
+    fn disassemble_buffer<W: Write>(&self, buffer: &mut W, name: &str) {
+        writeln!(buffer);
+        writeln!(buffer, "== {} ==", name);
 
         let mut n = 0;
         loop {
             let Some(code) = self.read_byte(n) else {
                 break;
             };
-            n = self.disassemble_instruction(code, n);
+            n = self.disassemble_instruction_buffer(buffer, code, n);
         }
     }
 
     // Returns the next instruction location
-    pub fn disassemble_instruction(&self, byte: Byte, at: usize) -> usize {
+    fn disassemble_instruction_buffer<W: Write>(
+        &self,
+        buffer: &mut W,
+        byte: Byte,
+        at: usize,
+    ) -> usize {
         use OpCode::*;
 
         let line = self.lines.at(at);
@@ -26,21 +51,21 @@ impl Chunk {
                     .read_constant(at + 1)
                     .unwrap_or_else(|| panic!("Constant at index {:?} should exist", at + 1));
 
-                println!("{:8} {:8} | Constant {:?}", at, line, c);
+                writeln!(buffer, "{:8} {:8} | Constant {:?}", at, line, c);
 
                 at + 2
             }
-            Add => Self::simple_instruction("Add", at, line),
-            Subtract => Self::simple_instruction("Subtract", at, line),
-            Multiply => Self::simple_instruction("Multiply", at, line),
-            Divide => Self::simple_instruction("Divide", at, line),
-            Negate => Self::simple_instruction("Negate", at, line),
-            Return => Self::simple_instruction("Return", at, line),
+            Add => Self::simple_instruction("Add", buffer, at, line),
+            Subtract => Self::simple_instruction("Subtract", buffer, at, line),
+            Multiply => Self::simple_instruction("Multiply", buffer, at, line),
+            Divide => Self::simple_instruction("Divide", buffer, at, line),
+            Negate => Self::simple_instruction("Negate", buffer, at, line),
+            Return => Self::simple_instruction("Return", buffer, at, line),
         }
     }
 
-    fn simple_instruction(name: &str, at: usize, line: usize) -> usize {
-        println!("{:8} {:8} | {}", at, line, name);
+    fn simple_instruction<W: Write>(name: &str, buffer: &mut W, at: usize, line: usize) -> usize {
+        writeln!(buffer, "{:8} {:8} | {}", at, line, name);
         at + 1
     }
 }
