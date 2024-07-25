@@ -31,7 +31,7 @@ impl<'a> Parser<'a> {
         it.advance(); // Loads the first token in current
         it.parse_expression(0)?;
         it.expect_done();
-        it.end();
+        it.end()?;
         Ok(it.chunk)
     }
 
@@ -97,8 +97,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn end(&mut self) {
-        self.emit_return(self.line);
+    fn end(&mut self) -> Result<(), InterpretError> {
+        self.emit_return(self.line)?;
+        Ok(())
     }
 
     fn parse_number(&mut self) -> Result<(), InterpretError> {
@@ -187,8 +188,9 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn emit_return(&mut self, line: usize) {
-        self.emit_op_code(OpCode::Return, line);
+    fn emit_return(&mut self, line: usize) -> Result<(), InterpretError> {
+        self.emit_op_code(OpCode::Return, line)?;
+        Ok(())
     }
 }
 
