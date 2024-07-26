@@ -53,6 +53,15 @@ impl Value {
 pub enum OpCode {
     Constant,
 
+    // literals
+    Nil,
+    True,
+    False,
+
+    // unary
+    Not,
+
+    // mathematical
     Add,
     Subtract,
     Multiply,

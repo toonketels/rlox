@@ -1,5 +1,5 @@
 use crate::chunk::Chunk;
-use crate::opcode::Value::Number;
+use crate::opcode::Value::{Bool, Number};
 use crate::opcode::{Byte, OpCode, Value};
 use crate::tokenizer::TokenKind;
 use crate::vm::InterpretError::{RuntimeError, RuntimeErrorWithReason};
@@ -19,6 +19,7 @@ pub struct Vm<'a> {
 #[derive(Debug)]
 pub enum CompilationErrorReason {
     NotEnoughTokens,
+    TooMayTokens,
     ParseFloatError,
     ExpectedRightParen,
     ExpectedPrefix,
@@ -58,7 +59,7 @@ impl Display for InterpretError {
     }
 }
 
-pub fn interpret(chunk: &Chunk) -> Result<(), InterpretError> {
+pub fn interpret(chunk: &Chunk) -> Result<Value, InterpretError> {
     let mut vm = Vm::new(chunk);
     vm.run()
 }
@@ -99,7 +100,7 @@ impl<'a> Vm<'a> {
         self.stack.peek(offset)
     }
 
-    pub fn run(&mut self) -> Result<(), InterpretError> {
+    pub fn run(&mut self) -> Result<Value, InterpretError> {
         macro_rules! binary_op {
             ($op:tt) => {
                 {
@@ -121,9 +122,25 @@ impl<'a> Vm<'a> {
             match self.read_decode()? {
                 // We are done
                 Return => {
-                    println!("Return: {:?}", self.pop_stack()?);
-                    break Ok(());
+                    let it = self.pop_stack()?;
+                    println!("Return: {:?}", it);
+                    break Ok(it);
                 }
+
+                // unary
+                Not => {
+                    let is_bool = self.peek_stack(0).is_some_and(|it| it.is_bool());
+                    if !is_bool {
+                        Err(RuntimeErrorWithReason("Not works on booleans only"))?;
+                    }
+                    let it = self.pop_stack()?.as_bool();
+                    self.push_stack(Bool(!it));
+                }
+
+                // Literals
+                False => self.push_stack(Bool(false)),
+                True => self.push_stack(Bool(true)),
+                Nil => self.push_stack(Value::Nil),
 
                 // Arithmetic
                 Add => binary_op!(+),
@@ -163,13 +180,51 @@ impl<'a> Vm<'a> {
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     use crate::parser::Parser;
     use crate::tokenizer::Tokenizer;
 
     #[test]
-    fn do_it() {
+    fn interpret_1() {
         let chunk = Parser::parse(Tokenizer::new("10 + 30 * 2")).unwrap();
-        interpret(&chunk).unwrap();
+        let result = interpret(&chunk).unwrap();
+
+        assert_eq!(result, Value::Number(70.0));
+    }
+
+    #[test]
+    fn interpret_2() {
+        let chunk = Parser::parse(Tokenizer::new("!true")).unwrap();
+        let result = interpret(&chunk).unwrap();
+
+        assert_eq!(result, Value::Bool(false));
+    }
+
+    #[test]
+    fn interpret_3() {
+        let chunk = Parser::parse(Tokenizer::new("nil")).unwrap();
+        let result = interpret(&chunk).unwrap();
+
+        assert_eq!(result, Value::Nil);
+    }
+
+    #[test]
+    #[ignore]
+    fn interpret_4() {
+        // We havent implemented this but the book does
+        let chunk = Parser::parse(Tokenizer::new("!nil")).unwrap();
+        let result = interpret(&chunk).unwrap();
+
+        assert_eq!(result, Value::Bool(true));
+    }
+
+    #[test]
+    fn interpret_5() {
+        // We havent implemented this but the book does
+        let chunk = Parser::parse(Tokenizer::new("!!false")).unwrap();
+        let result = interpret(&chunk).unwrap();
+
+        assert_eq!(result, Value::Bool(false));
     }
 }

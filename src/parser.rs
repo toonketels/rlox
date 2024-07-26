@@ -1,10 +1,11 @@
 use crate::chunk::Chunk;
+use crate::opcode::OpCode::{False, Nil, True};
 use crate::opcode::Value::Number;
 use crate::opcode::{OpCode, Value};
 use crate::tokenizer::{Token, TokenKind, Tokenizer};
 use crate::vm::CompilationErrorReason::{
     ExpectedBinaryOperator, ExpectedDifferentToken, ExpectedPrefix, ExpectedRightParen,
-    NotEnoughTokens, ParseFloatError,
+    NotEnoughTokens, ParseFloatError, TooMayTokens,
 };
 use crate::vm::InterpretError;
 use crate::vm::InterpretError::CompileError;
@@ -31,7 +32,7 @@ impl<'a> Parser<'a> {
         let mut it = Parser::new(tokenizer);
         it.advance(); // Loads the first token in current
         it.parse_expression(0)?;
-        it.expect_done();
+        it.expect_done()?;
         it.end()?;
         Ok(it.chunk)
     }
@@ -40,8 +41,12 @@ impl<'a> Parser<'a> {
         self.current.as_ref().ok_or(CompileError(NotEnoughTokens))
     }
 
-    fn expect_done(&self) -> bool {
-        self.current.is_none()
+    fn expect_done(&self) -> Result<(), InterpretError> {
+        if self.current.is_none() {
+            Ok(())
+        } else {
+            Err(CompileError(TooMayTokens))
+        }
     }
 
     fn expect(&self, expected: TokenKind) -> Result<(), InterpretError> {
@@ -62,8 +67,9 @@ impl<'a> Parser<'a> {
         // prefix / nud position
         match self.current()?.kind {
             TokenKind::Number => self.parse_number(),
+            TokenKind::False | TokenKind::True | TokenKind::Nil => self.parse_literal(),
             TokenKind::LeftParen => self.parse_grouping(),
-            TokenKind::Minus => self.parse_unary(),
+            TokenKind::Minus | TokenKind::Bang => self.parse_unary(),
             _ => todo!(),
         }?;
 
@@ -128,13 +134,38 @@ impl<'a> Parser<'a> {
     fn parse_unary(&mut self) -> Result<(), InterpretError> {
         let kind = self.current()?.kind;
         let line = self.line;
-        self.advance();
 
         match kind {
             TokenKind::Minus => {
+                self.advance();
                 self.parse_expression(self.precedence(kind));
                 self.emit_op_code(OpCode::Negate, line)?
             }
+            TokenKind::Bang => {
+                self.advance();
+                self.parse_expression(self.precedence(kind));
+                self.emit_op_code(OpCode::Not, line)?
+            }
+            _ => Err(CompileError(ExpectedPrefix))?,
+        }
+
+        Ok(())
+    }
+
+    fn parse_literal(&mut self) -> Result<(), InterpretError> {
+        let kind = self.current()?.kind;
+        macro_rules! emit {
+            ($variant:ident) => {{
+                let line = self.line;
+                self.advance();
+                self.emit_op_code($variant, line)?
+            }};
+        }
+
+        match kind {
+            TokenKind::False => emit!(False),
+            TokenKind::True => emit!(True),
+            TokenKind::Nil => emit!(Nil),
             _ => Err(CompileError(ExpectedPrefix))?,
         }
 

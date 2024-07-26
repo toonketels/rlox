@@ -55,6 +55,16 @@ impl Chunk {
 
                 at + 2
             }
+
+            // literals
+            False => Self::simple_instruction("False", buffer, at, line),
+            True => Self::simple_instruction("True", buffer, at, line),
+            Nil => Self::simple_instruction("Nil", buffer, at, line),
+
+            // unary
+            Not => Self::simple_instruction("Not", buffer, at, line),
+
+            // mathematical
             Add => Self::simple_instruction("Add", buffer, at, line),
             Subtract => Self::simple_instruction("Subtract", buffer, at, line),
             Multiply => Self::simple_instruction("Multiply", buffer, at, line),
