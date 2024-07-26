@@ -1,7 +1,8 @@
 use crate::chunk::Chunk;
+use crate::opcode::Value::Number;
 use crate::opcode::{Byte, OpCode, Value};
 use crate::tokenizer::TokenKind;
-use crate::vm::InterpretError::RuntimeError;
+use crate::vm::InterpretError::{RuntimeError, RuntimeErrorWithReason};
 use stack::Stack;
 use std::fmt::{Display, Formatter};
 
@@ -33,6 +34,7 @@ pub enum InterpretError {
     LoadError,
     CompileError(CompilationErrorReason),
     RuntimeError,
+    RuntimeErrorWithReason(&'static str),
     Io(std::io::Error),
 }
 
@@ -47,6 +49,9 @@ impl Display for InterpretError {
         match self {
             InterpretError::CompileError(_) => write!(f, "compilation error"),
             InterpretError::RuntimeError => write!(f, "runtime error"),
+            InterpretError::RuntimeErrorWithReason(reason) => {
+                write!(f, "runtime error: {}", reason)
+            }
             InterpretError::LoadError => write!(f, "load error"),
             InterpretError::Io(io) => write!(f, "Io error {}", io),
         }
@@ -90,13 +95,23 @@ impl<'a> Vm<'a> {
         self.stack.pop().ok_or(RuntimeError)
     }
 
+    fn peek_stack(&mut self, offset: usize) -> Option<&Value> {
+        self.stack.peek(offset)
+    }
+
     pub fn run(&mut self) -> Result<(), InterpretError> {
         macro_rules! binary_op {
             ($op:tt) => {
                 {
-                    let x = self.pop_stack()?;
-                    let y = self.pop_stack()?;
-                    self.push_stack(x $op y)
+
+                    let is_number = self.peek_stack(0).is_some_and(|it| it.is_number()) &&  self.peek_stack(1).is_some_and(|it| it.is_number());
+                    if !is_number {
+                        Err(RuntimeErrorWithReason("Operands must be numbers"))?;
+                    }
+                    let x = self.pop_stack()?.as_number();
+                    let y = self.pop_stack()?.as_number();
+                    let z = x $op y;
+                    self.push_stack(Number(z))
                 }
             };
         }
@@ -116,8 +131,12 @@ impl<'a> Vm<'a> {
                 Multiply => binary_op!(*),
                 Divide => binary_op!(/),
                 Negate => {
+                    let is_number = self.peek_stack(0).is_some_and(|it| it.is_number());
+                    if !is_number {
+                        Err(RuntimeErrorWithReason("Negation works on numbers only"))?;
+                    }
                     let x = self.pop_stack()?;
-                    self.push_stack(-x)
+                    self.push_stack(Number(-x.as_number()))
                 }
 
                 Constant => {
@@ -139,5 +158,18 @@ impl<'a> Vm<'a> {
         self.chunk.disassemble_instruction(byte, self.ip - 1);
 
         Ok(code)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::Parser;
+    use crate::tokenizer::Tokenizer;
+
+    #[test]
+    fn do_it() {
+        let chunk = Parser::parse(Tokenizer::new("10 + 30 * 2")).unwrap();
+        interpret(&chunk).unwrap();
     }
 }

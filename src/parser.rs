@@ -1,5 +1,6 @@
 use crate::chunk::Chunk;
-use crate::opcode::OpCode;
+use crate::opcode::Value::Number;
+use crate::opcode::{OpCode, Value};
 use crate::tokenizer::{Token, TokenKind, Tokenizer};
 use crate::vm::CompilationErrorReason::{
     ExpectedBinaryOperator, ExpectedDifferentToken, ExpectedPrefix, ExpectedRightParen,
@@ -110,7 +111,7 @@ impl<'a> Parser<'a> {
             .map_err(|it| CompileError(ParseFloatError))?;
         let line = self.line;
         self.advance();
-        self.emit_constant(it, line);
+        self.emit_constant(Number(it), line);
         Ok(())
     }
 
@@ -182,7 +183,7 @@ impl<'a> Parser<'a> {
         self.emit_op_code(code2, line);
     }
 
-    fn emit_constant(&mut self, constant: f64, line: usize) -> Result<(), InterpretError> {
+    fn emit_constant(&mut self, constant: Value, line: usize) -> Result<(), InterpretError> {
         // @TODO error handling out of range
         self.chunk.write_constant(constant, line);
         Ok(())
