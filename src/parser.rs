@@ -197,6 +197,36 @@ impl<'a> Parser<'a> {
                 self.parse_expression(self.precedence(kind))?;
                 self.emit_op_code(OpCode::Divide, line)
             }
+            TokenKind::EqualEqual => {
+                self.advance();
+                self.parse_expression(self.precedence(kind))?;
+                self.emit_op_code(OpCode::Equal, line)
+            }
+            TokenKind::BangEqual => {
+                self.advance();
+                self.parse_expression(self.precedence(kind))?;
+                self.emit_op_codes(OpCode::Equal, OpCode::Not, line)
+            }
+            TokenKind::Greater => {
+                self.advance();
+                self.parse_expression(self.precedence(kind))?;
+                self.emit_op_code(OpCode::Greater, line)
+            }
+            TokenKind::GreaterEqual => {
+                self.advance();
+                self.parse_expression(self.precedence(kind))?;
+                self.emit_op_codes(OpCode::Less, OpCode::Not, line)
+            }
+            TokenKind::Less => {
+                self.advance();
+                self.parse_expression(self.precedence(kind))?;
+                self.emit_op_code(OpCode::Less, line)
+            }
+            TokenKind::LessEqual => {
+                self.advance();
+                self.parse_expression(self.precedence(kind))?;
+                self.emit_op_codes(OpCode::Greater, OpCode::Not, line)
+            }
             _ => Err(CompileError(ExpectedBinaryOperator))?,
         };
 
@@ -209,9 +239,15 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn emit_bytes(&mut self, code1: OpCode, code2: OpCode, line: usize) {
-        self.emit_op_code(code1, line);
-        self.emit_op_code(code2, line);
+    fn emit_op_codes(
+        &mut self,
+        code1: OpCode,
+        code2: OpCode,
+        line: usize,
+    ) -> Result<(), InterpretError> {
+        self.emit_op_code(code1, line)?;
+        self.emit_op_code(code2, line)?;
+        Ok(())
     }
 
     fn emit_constant(&mut self, constant: Value, line: usize) -> Result<(), InterpretError> {

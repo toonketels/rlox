@@ -101,7 +101,7 @@ impl<'a> Vm<'a> {
     }
 
     pub fn run(&mut self) -> Result<Value, InterpretError> {
-        macro_rules! binary_op {
+        macro_rules! binary_op_number {
             ($op:tt) => {
                 {
 
@@ -109,10 +109,24 @@ impl<'a> Vm<'a> {
                     if !is_number {
                         Err(RuntimeErrorWithReason("Operands must be numbers"))?;
                     }
-                    let x = self.pop_stack()?.as_number();
-                    let y = self.pop_stack()?.as_number();
-                    let z = x $op y;
-                    self.push_stack(Number(z))
+                    let rhs = self.pop_stack()?.as_number();
+                    let lhs = self.pop_stack()?.as_number();
+                    self.push_stack(Number(lhs $op rhs))
+                }
+            };
+        }
+
+        macro_rules! binary_op_bool {
+            ($op:tt) => {
+                {
+
+                    let is_number = self.peek_stack(0).is_some_and(|it| it.is_number()) &&  self.peek_stack(1).is_some_and(|it| it.is_number());
+                    if !is_number {
+                        Err(RuntimeErrorWithReason("Operands must be numbers"))?;
+                    }
+                    let rhs = self.pop_stack()?.as_number();
+                    let lhs = self.pop_stack()?.as_number();
+                    self.push_stack(Bool(lhs $op rhs))
                 }
             };
         }
@@ -129,11 +143,7 @@ impl<'a> Vm<'a> {
 
                 // unary
                 Not => {
-                    let is_bool = self.peek_stack(0).is_some_and(|it| it.is_bool());
-                    if !is_bool {
-                        Err(RuntimeErrorWithReason("Not works on booleans only"))?;
-                    }
-                    let it = self.pop_stack()?.as_bool();
+                    let it = self.pop_stack()?.is_truthy();
                     self.push_stack(Bool(!it));
                 }
 
@@ -142,11 +152,20 @@ impl<'a> Vm<'a> {
                 True => self.push_stack(Bool(true)),
                 Nil => self.push_stack(Value::Nil),
 
+                // Comparison
+                Equal => {
+                    let rhs = self.pop_stack()?;
+                    let lhs = self.pop_stack()?;
+                    self.push_stack(Value::Bool(lhs == rhs));
+                } // @TODO more then just numbers can be compared
+                Greater => binary_op_bool!(>),
+                Less => binary_op_bool!(<),
+
                 // Arithmetic
-                Add => binary_op!(+),
-                Subtract => binary_op!(-),
-                Multiply => binary_op!(*),
-                Divide => binary_op!(/),
+                Add => binary_op_number!(+),
+                Subtract => binary_op_number!(-),
+                Multiply => binary_op_number!(*),
+                Divide => binary_op_number!(/),
                 Negate => {
                     let is_number = self.peek_stack(0).is_some_and(|it| it.is_number());
                     if !is_number {
@@ -186,7 +205,7 @@ mod tests {
     use crate::tokenizer::Tokenizer;
 
     #[test]
-    fn interpret_1() {
+    fn interpret_math_expression_with_precedence() {
         let chunk = Parser::parse(Tokenizer::new("10 + 30 * 2")).unwrap();
         let result = interpret(&chunk).unwrap();
 
@@ -194,15 +213,14 @@ mod tests {
     }
 
     #[test]
-    fn interpret_2() {
-        let chunk = Parser::parse(Tokenizer::new("!true")).unwrap();
-        let result = interpret(&chunk).unwrap();
+    fn interpret_booleans() {
+        let cases = vec![("true", true), ("false", false)];
 
-        assert_eq!(result, Value::Bool(false));
+        interpret_result_eq_bool(cases)
     }
 
     #[test]
-    fn interpret_3() {
+    fn interpret_nil() {
         let chunk = Parser::parse(Tokenizer::new("nil")).unwrap();
         let result = interpret(&chunk).unwrap();
 
@@ -210,21 +228,114 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
-    fn interpret_4() {
-        // We havent implemented this but the book does
-        let chunk = Parser::parse(Tokenizer::new("!nil")).unwrap();
-        let result = interpret(&chunk).unwrap();
+    fn interpret_not() {
+        let cases = vec![
+            ("!false", true),
+            ("!true", false),
+            ("!!true", true),
+            ("!!false", false),
+            ("!(5 == 5)", false),
+            ("!nil", true),
+            ("!0", true),
+            ("!1", false),
+            ("!-1", false),
+        ];
 
-        assert_eq!(result, Value::Bool(true));
+        interpret_result_eq_bool(cases)
     }
 
     #[test]
-    fn interpret_5() {
-        // We havent implemented this but the book does
-        let chunk = Parser::parse(Tokenizer::new("!!false")).unwrap();
-        let result = interpret(&chunk).unwrap();
+    fn interpret_equal() {
+        let cases = vec![
+            ("100 == 100", true),
+            ("100 == 10", false),
+            ("true == true", true),
+            ("true == false", false),
+            ("nil == nil", true),
+            ("true == 10", false),
+            ("100 == nil", false),
+            ("false == nil", false),
+            ("true == 1", false),
+        ];
 
-        assert_eq!(result, Value::Bool(false));
+        interpret_result_eq_bool(cases)
+    }
+
+    #[test]
+    fn interpret_not_equal() {
+        let cases = vec![
+            ("100 != 100", false),
+            ("100 != 10", true),
+            ("true != true", false),
+            ("true != false", true),
+            ("nil != nil", false),
+            ("true != 10", true),
+            ("100 != nil", true),
+            ("false != nil", true),
+            ("true != 1", true),
+        ];
+
+        interpret_result_eq_bool(cases);
+    }
+
+    #[test]
+    fn interpret_greater() {
+        let cases = vec![
+            ("100 > 100", false),
+            ("100 > 10", true),
+            ("10 > 100", false),
+        ];
+
+        interpret_result_eq_bool(cases)
+    }
+
+    #[test]
+    fn interpret_greater_equal() {
+        let cases = vec![
+            ("100 >= 100", true),
+            ("100 >= 10", true),
+            ("10 >= 100", false),
+        ];
+
+        interpret_result_eq_bool(cases)
+    }
+
+    #[test]
+    fn interpret_less() {
+        let cases = vec![
+            ("100 < 100", false),
+            ("100 < 10", false),
+            ("10 < 100", true),
+        ];
+
+        interpret_result_eq_bool(cases)
+    }
+    #[test]
+    fn interpret_less_equal() {
+        let cases = vec![
+            ("100 <= 100", true),
+            ("100 <= 10", false),
+            ("10 <= 100", true),
+        ];
+
+        interpret_result_eq_bool(cases)
+    }
+
+    fn interpret_result_eq_bool(cases: Vec<(&str, bool)>) {
+        for (source, expected) in cases {
+            let chunk = Parser::parse(Tokenizer::new(source)).unwrap();
+            let result = interpret(&chunk).unwrap();
+
+            assert_eq!(result, Value::Bool(expected));
+        }
+    }
+
+    fn interpret_result_eq_number(cases: Vec<(&str, f64)>) {
+        for (source, expected) in cases {
+            let chunk = Parser::parse(Tokenizer::new(source)).unwrap();
+            let result = interpret(&chunk).unwrap();
+
+            assert_eq!(result, Value::Number(expected));
+        }
     }
 }

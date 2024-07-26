@@ -61,6 +61,11 @@ impl Chunk {
             True => Self::simple_instruction("True", buffer, at, line),
             Nil => Self::simple_instruction("Nil", buffer, at, line),
 
+            // comparison
+            Equal => Self::simple_instruction("Equal", buffer, at, line),
+            Greater => Self::simple_instruction("Greater", buffer, at, line),
+            Less => Self::simple_instruction("Less", buffer, at, line),
+
             // unary
             Not => Self::simple_instruction("Not", buffer, at, line),
 

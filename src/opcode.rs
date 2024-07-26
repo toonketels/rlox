@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Formatter};
 use std::mem;
 
 /// OpCodes used by our vm.
@@ -6,11 +7,21 @@ use std::mem;
 pub type Byte = u8;
 
 // Constants etc.
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum Value {
     Number(f64),
     Bool(bool),
     Nil,
+}
+
+impl Debug for Value {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::Number(it) => write!(f, "{:?}", it),
+            Value::Bool(it) => write!(f, "{:?}", it),
+            Value::Nil => write!(f, "nil"),
+        }
+    }
 }
 
 impl Value {
@@ -19,6 +30,15 @@ impl Value {
     }
     pub fn is_bool(&self) -> bool {
         matches!(self, Value::Bool(_))
+    }
+
+    // Note, our definition is a bit different from the book
+    pub fn is_truthy(&self) -> bool {
+        match self {
+            Value::Nil => false,
+            Value::Bool(it) => *it,
+            Value::Number(it) => *it != 0.0, // all number are truthy expect for 0
+        }
     }
     pub fn is_nil(&self) -> bool {
         matches!(self, Value::Nil)
@@ -57,6 +77,11 @@ pub enum OpCode {
     Nil,
     True,
     False,
+
+    // comparison
+    Equal,
+    Greater,
+    Less,
 
     // unary
     Not,
