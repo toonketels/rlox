@@ -321,6 +321,13 @@ mod tests {
         interpret_result_eq_bool(cases)
     }
 
+    #[test]
+    fn interpret_test_1() {
+        let cases = vec![("!(5 - 4 > 3 * 2 == !nil)", true)];
+
+        interpret_result_eq_bool(cases)
+    }
+
     fn interpret_result_eq_bool(cases: Vec<(&str, bool)>) {
         for (source, expected) in cases {
             let chunk = Parser::parse(Tokenizer::new(source)).unwrap();
