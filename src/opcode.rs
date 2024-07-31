@@ -59,6 +59,26 @@ impl From<Value> for Returned {
     }
 }
 
+impl From<&str> for Returned {
+    fn from(it: &str) -> Self {
+        Self::Object(Obj::String {
+            str: it.to_string(),
+        })
+    }
+}
+
+impl From<f64> for Returned {
+    fn from(it: f64) -> Self {
+        Self::Number(it)
+    }
+}
+
+impl From<bool> for Returned {
+    fn from(it: bool) -> Self {
+        Self::Bool(it)
+    }
+}
+
 impl Debug for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -159,6 +179,8 @@ pub enum OpCode {
     Multiply,
     Divide,
     Negate,
+
+    Print,
 
     Return,
 }

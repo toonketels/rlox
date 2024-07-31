@@ -84,6 +84,9 @@ impl Chunk {
             Multiply => Self::simple_instruction("Multiply", buffer, at, line),
             Divide => Self::simple_instruction("Divide", buffer, at, line),
             Negate => Self::simple_instruction("Negate", buffer, at, line),
+
+            // statements
+            Print => Self::simple_instruction("Print", buffer, at, line),
             Return => Self::simple_instruction("Return", buffer, at, line),
         }
     }

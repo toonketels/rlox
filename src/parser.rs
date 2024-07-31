@@ -31,7 +31,9 @@ impl<'a> Parser<'a> {
     pub fn parse(tokenizer: Tokenizer) -> Result<Chunk, InterpretError> {
         let mut it = Parser::new(tokenizer);
         it.advance(); // Loads the first token in current
-        it.parse_expression(0)?;
+        while it.current.as_ref().is_some() {
+            it.parse_declaration()?;
+        }
         it.expect_done()?;
         it.end()?;
         Ok(it.chunk)
@@ -60,6 +62,21 @@ impl<'a> Parser<'a> {
         self.current = self.tokenizer.next();
         if let Some(token) = self.current.as_ref() {
             self.line = token.line
+        }
+    }
+
+    // if the current token is what it expected, consume it
+    fn advance_if_current_is(
+        &mut self,
+        token: TokenKind,
+        error: &'static str,
+    ) -> Result<(), InterpretError> {
+        match self.current()?.kind {
+            it if it == token => {
+                self.advance();
+                Ok(())
+            }
+            _ => Err(InterpretError::RuntimeErrorWithReason(error)),
         }
     }
 
@@ -282,6 +299,26 @@ impl<'a> Parser<'a> {
         self.emit_op_code(OpCode::Return, line)?;
         Ok(())
     }
+
+    // declarations: statements that bind a new name (variable) to a value
+    fn parse_declaration(&mut self) -> Result<(), InterpretError> {
+        self.parse_statement()
+    }
+
+    // all other statements
+    fn parse_statement(&mut self) -> Result<(), InterpretError> {
+        match self.current()?.kind {
+            TokenKind::Print => self.print_statement(),
+            _ => self.parse_expression(0), // for now, default to just parsing expressions so all our tests still work
+        }
+    }
+
+    fn print_statement(&mut self) -> Result<(), InterpretError> {
+        self.advance();
+        self.parse_expression(0)?;
+        self.advance_if_current_is(TokenKind::Semicolon, "Expected ';' after value");
+        self.emit_op_code(OpCode::Print, self.line)
+    }
 }
 
 #[cfg(test)]
@@ -379,6 +416,22 @@ mod tests {
 == parse 5 ==
        0        0 | String "hello world"
        2        0 | Return
+"#;
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn parse_print_statement() {
+        let it = Parser::parse(Tokenizer::new("print \"hello world\";"));
+
+        assert!(it.is_ok());
+
+        let output = it.unwrap().disassemble_into_string("parse print statement");
+        let expected = r#"
+== parse print statement ==
+       0        0 | String "hello world"
+       2        0 | Print
+       3        0 | Return
 "#;
         assert_eq!(output, expected);
     }

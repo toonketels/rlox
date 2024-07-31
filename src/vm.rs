@@ -3,7 +3,7 @@ use crate::heap::rc::RcHeap as Heap;
 use crate::opcode::Value::{Bool, Number, Object};
 use crate::opcode::{Byte, Obj, OpCode, Returned, Value};
 use crate::tokenizer::TokenKind;
-use crate::vm::InterpretError::{RuntimeError, RuntimeErrorWithReason};
+use crate::vm::InterpretError::{RuntimeError, RuntimeErrorWithReason, StackUnderflowError};
 use stack::Stack;
 use std::fmt::{Display, Formatter};
 
@@ -37,6 +37,7 @@ pub enum InterpretError {
     LoadError,
     CompileError(CompilationErrorReason),
     RuntimeError,
+    StackUnderflowError,
     RuntimeErrorWithReason(&'static str),
     Io(std::io::Error),
 }
@@ -52,6 +53,7 @@ impl Display for InterpretError {
         match self {
             InterpretError::CompileError(_) => write!(f, "compilation error"),
             InterpretError::RuntimeError => write!(f, "runtime error"),
+            InterpretError::StackUnderflowError => write!(f, "stack underflow error"),
             InterpretError::RuntimeErrorWithReason(reason) => {
                 write!(f, "runtime error: {}", reason)
             }
@@ -108,7 +110,7 @@ impl<'a> Vm<'a> {
     }
 
     fn pop_stack(&mut self) -> Result<Value, InterpretError> {
-        self.stack.pop().ok_or(RuntimeError)
+        self.stack.pop().ok_or(StackUnderflowError)
     }
 
     fn peek_stack(&mut self, offset: usize) -> Option<&Value> {
@@ -207,6 +209,11 @@ impl<'a> Vm<'a> {
                     let x = self.read_constant()?;
                     self.push_stack(x)
                 }
+
+                // statements
+                Print => {
+                    self.print();
+                }
             }
         }
     }
@@ -233,6 +240,14 @@ impl<'a> Vm<'a> {
 
         Ok(code)
     }
+
+    fn print(&mut self) -> Result<(), InterpretError> {
+        let it = self.pop_stack()?;
+        println!("PRINTED: {:?}", &it);
+        // Push the value back onto the stack so we can still return it
+        self.push_stack(it);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -244,30 +259,22 @@ mod tests {
 
     #[test]
     fn interpret_math_expression_with_precedence() {
-        let chunk = Parser::parse(Tokenizer::new("10 + 30 * 2")).unwrap();
-        let result = interpret(&chunk).unwrap();
-
-        assert_eq!(result, Returned::Number(70.0));
+        interpret_result(vec![("10 + 30 * 2", 70.0)]);
     }
 
     #[test]
     fn interpret_booleans() {
-        let cases = vec![("true", true), ("false", false)];
-
-        interpret_result_eq_bool(cases)
+        interpret_result(vec![("true", true), ("false", false)])
     }
 
     #[test]
     fn interpret_nil() {
-        let chunk = Parser::parse(Tokenizer::new("nil")).unwrap();
-        let result = interpret(&chunk).unwrap();
-
-        assert_eq!(result, Returned::Nil);
+        interpret_result(vec![("nil", Returned::Nil)])
     }
 
     #[test]
     fn interpret_not() {
-        let cases = vec![
+        interpret_result(vec![
             ("!false", true),
             ("!true", false),
             ("!!true", true),
@@ -277,14 +284,12 @@ mod tests {
             ("!0", true),
             ("!1", false),
             ("!-1", false),
-        ];
-
-        interpret_result_eq_bool(cases)
+        ])
     }
 
     #[test]
     fn interpret_equal() {
-        let cases = vec![
+        interpret_result(vec![
             ("100 == 100", true),
             ("100 == 10", false),
             ("true == true", true),
@@ -294,14 +299,12 @@ mod tests {
             ("100 == nil", false),
             ("false == nil", false),
             ("true == 1", false),
-        ];
-
-        interpret_result_eq_bool(cases)
+        ])
     }
 
     #[test]
     fn interpret_not_equal() {
-        let cases = vec![
+        interpret_result(vec![
             ("100 != 100", false),
             ("100 != 10", true),
             ("true != true", false),
@@ -311,124 +314,97 @@ mod tests {
             ("100 != nil", true),
             ("false != nil", true),
             ("true != 1", true),
-        ];
-
-        interpret_result_eq_bool(cases);
+        ]);
     }
 
     #[test]
     fn interpret_greater() {
-        let cases = vec![
+        interpret_result(vec![
             ("100 > 100", false),
             ("100 > 10", true),
             ("10 > 100", false),
-        ];
-
-        interpret_result_eq_bool(cases)
+        ])
     }
 
     #[test]
     fn interpret_greater_equal() {
-        let cases = vec![
+        interpret_result(vec![
             ("100 >= 100", true),
             ("100 >= 10", true),
             ("10 >= 100", false),
-        ];
-
-        interpret_result_eq_bool(cases)
+        ])
     }
 
     #[test]
     fn interpret_less() {
-        let cases = vec![
+        interpret_result(vec![
             ("100 < 100", false),
             ("100 < 10", false),
             ("10 < 100", true),
-        ];
-
-        interpret_result_eq_bool(cases)
+        ])
     }
     #[test]
     fn interpret_less_equal() {
-        let cases = vec![
+        interpret_result(vec![
             ("100 <= 100", true),
             ("100 <= 10", false),
             ("10 <= 100", true),
-        ];
-
-        interpret_result_eq_bool(cases)
+        ])
     }
     #[test]
     fn interpret_expression() {
-        let cases = vec![("!(5 - 4 > 3 * 2 == !nil)", true)];
-
-        interpret_result_eq_bool(cases)
+        interpret_result(vec![("!(5 - 4 > 3 * 2 == !nil)", true)])
     }
 
     #[test]
     fn interpret_strings() {
-        let chunk = Parser::parse(Tokenizer::new("\"hello world\"")).unwrap();
-        let result = interpret(&chunk).unwrap();
-
-        assert_eq!(
-            result,
-            Returned::Object(Obj::String {
-                str: "hello world".to_string()
-            })
-        )
+        interpret_result(vec![("\"hello world\"", "hello world")]);
     }
 
     #[test]
     fn interpret_string_equality() {
-        let cases = vec![
+        interpret_result(vec![
             ("\"ok\" == \"ok\"", true),
             ("\"ok\" == \"nok\"", false),
             ("\"ok\" != \"nok\"", true),
             ("\"ok\" != \"ok\"", false),
-        ];
-
-        interpret_result_eq_bool(cases)
+        ])
     }
 
     #[test]
     fn interpret_string_concatenation() {
-        let cases = vec![
+        interpret_result(vec![
             ("\"hello \" + \"world\"", "hello world"),
             ("\"hello\" + \" \"  + \"world\"", "hello world"),
-        ];
-
-        interpret_result_eq_string(cases)
+        ])
     }
 
-    fn interpret_result_eq_bool(cases: Vec<(&str, bool)>) {
+    #[test]
+    fn interpret_print_statement() {
+        interpret_result(vec![("print 5 + 2;", 7.0)]);
+
+        interpret_result(vec![
+            ("print 5 > 2;", true),
+            ("print 5 >= 5;", true),
+            ("print 5 <= 7;", true),
+            ("print 5 != 7;", true),
+        ]);
+
+        interpret_result(vec![
+            ("print \"hello \" + \"world\";", "hello world"),
+            ("\"hello\" + \" \"  + \"world\"", "hello world"),
+        ])
+    }
+
+    fn interpret_result<T>(cases: Vec<(&str, T)>)
+    where
+        Returned: From<T>,
+    {
         for (source, expected) in cases {
             let chunk = Parser::parse(Tokenizer::new(source)).unwrap();
             let result = interpret(&chunk).unwrap();
 
-            assert_eq!(result, Returned::Bool(expected));
-        }
-    }
-
-    fn interpret_result_eq_number(cases: Vec<(&str, f64)>) {
-        for (source, expected) in cases {
-            let chunk = Parser::parse(Tokenizer::new(source)).unwrap();
-            let result = interpret(&chunk).unwrap();
-
-            assert_eq!(result, Returned::Number(expected));
-        }
-    }
-
-    fn interpret_result_eq_string(cases: Vec<(&str, &str)>) {
-        for (source, expected) in cases {
-            let chunk = Parser::parse(Tokenizer::new(source)).unwrap();
-            let result = interpret(&chunk).unwrap();
-
-            assert_eq!(
-                result,
-                Returned::Object(Obj::String {
-                    str: expected.to_string()
-                })
-            )
+            assert_eq!(result, Returned::from(expected));
         }
     }
 }
