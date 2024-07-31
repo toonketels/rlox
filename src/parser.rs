@@ -295,6 +295,16 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
+    fn emit_global_name(
+        &mut self,
+        str: std::string::String,
+        line: usize,
+    ) -> Result<(), InterpretError> {
+        // @TODO error handling out of range
+        self.chunk.write_global_name(str, line);
+        Ok(())
+    }
+
     fn emit_return(&mut self, line: usize) -> Result<(), InterpretError> {
         self.emit_op_code(OpCode::Return, line)?;
         Ok(())
@@ -302,7 +312,11 @@ impl<'a> Parser<'a> {
 
     // declarations: statements that bind a new name (variable) to a value
     fn parse_declaration(&mut self) -> Result<(), InterpretError> {
-        self.parse_statement()
+        match self.current()?.kind {
+            TokenKind::Var => self.parse_var_declaration(),
+            _ => self.parse_statement(),
+        }
+        // @TODO implement synchronize to recover from errors
     }
 
     // all other statements
@@ -327,6 +341,39 @@ impl<'a> Parser<'a> {
         self.parse_expression(0);
         self.advance_if_current_is(TokenKind::Semicolon, "Expected ';' after value");
         self.emit_op_code(OpCode::Pop, self.line)
+    }
+
+    fn parse_var_declaration(&mut self) -> Result<(), InterpretError> {
+        self.advance();
+        let name = self.parse_var_name()?;
+
+        match self.current()?.kind {
+            TokenKind::Equal => {
+                self.advance();
+                self.parse_expression(0)
+            }
+            // var a; becomes var a = nil;
+            _ => self.emit_op_code(OpCode::Nil, self.line),
+        }?;
+
+        self.advance_if_current_is(
+            TokenKind::Semicolon,
+            "Expected ';' after variable declaration",
+        )?;
+
+        self.emit_global_name(name, self.line)
+    }
+
+    fn parse_var_name(&mut self) -> Result<String, InterpretError> {
+        let it = if self.current()?.kind == TokenKind::Identifier {
+            Ok(self.current()?.source.to_string())
+        } else {
+            Err(InterpretError::RuntimeErrorWithReason(
+                "Expected variable name",
+            ))
+        };
+        self.advance();
+        it
     }
 }
 
@@ -441,6 +488,26 @@ mod tests {
        0        0 | String "hello world"
        2        0 | Print
        3        0 | Return
+"#;
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn parse_var_declaration_1() {
+        let it = Parser::parse(Tokenizer::new("var it = 5 + 3;"));
+
+        assert!(it.is_ok());
+
+        let output = it
+            .unwrap()
+            .disassemble_into_string("parse var declaration 1");
+        let expected = r#"
+== parse var declaration 1 ==
+       0        0 | Constant 5.0
+       2        0 | Constant 3.0
+       4        0 | Add
+       5        0 | Global "it"
+       7        0 | Return
 "#;
         assert_eq!(output, expected);
     }

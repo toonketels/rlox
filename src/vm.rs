@@ -5,6 +5,7 @@ use crate::opcode::{Byte, Obj, OpCode, Returned, Value};
 use crate::tokenizer::TokenKind;
 use crate::vm::InterpretError::{RuntimeError, RuntimeErrorWithReason, StackUnderflowError};
 use stack::Stack;
+use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 
 mod stack;
@@ -15,6 +16,7 @@ pub struct Vm<'a> {
     chunk: &'a Chunk,
     stack: Stack,
     heap: Heap,
+    globals: HashMap<String, Value>,
     ip: usize,
 }
 
@@ -68,6 +70,9 @@ pub fn interpret(chunk: &Chunk) -> Result<Returned, InterpretError> {
     let result = vm.run();
     // Not strictly necessary to call free_all as it would be dropped by just going out of scope too
     vm.heap.free_all();
+
+    println!("Globals: {:?}", vm.globals);
+
     result.map(Returned::from)
 }
 
@@ -77,6 +82,7 @@ impl<'a> Vm<'a> {
             chunk,
             stack: Stack::new(),
             heap: Heap::new(),
+            globals: HashMap::new(),
             ip: 0,
         }
     }
@@ -103,6 +109,12 @@ impl<'a> Vm<'a> {
             str: str.to_string(),
         });
         Ok(Value::Object(obj))
+    }
+
+    fn read_global_name(&mut self) -> Result<String, InterpretError> {
+        let it = self.chunk.read_string(self.advance());
+        let str = it.ok_or(RuntimeError)?;
+        Ok(str.to_string())
     }
 
     fn push_stack(&mut self, value: Value) {
@@ -208,6 +220,13 @@ impl<'a> Vm<'a> {
                 Constant => {
                     let x = self.read_constant()?;
                     self.push_stack(x)
+                }
+
+                // bindings
+                DefineGlobal => {
+                    let name = self.read_global_name()?;
+                    let value = self.pop_stack()?;
+                    self.globals.insert(name, value);
                 }
 
                 // statements
@@ -397,6 +416,14 @@ mod tests {
             ("print \"hello \" + \"world\";", "hello world"),
             ("\"hello\" + \" \"  + \"world\"", "hello world"),
         ])
+    }
+
+    #[test]
+    #[should_panic]
+    fn interpret_var_statement() {
+        // Tests currently fails because there is nothing to pop from the stack to return yet
+        // @TODO fix as we can read vars
+        interpret_result(vec![("var hello = 5 + 2;", 7.0)]);
     }
 
     fn interpret_result<T>(cases: Vec<(&str, T)>)

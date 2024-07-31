@@ -180,6 +180,9 @@ pub enum OpCode {
     Divide,
     Negate,
 
+    // binding
+    DefineGlobal,
+
     Print,
     Pop, // pops a value from the stack to throw it away
 

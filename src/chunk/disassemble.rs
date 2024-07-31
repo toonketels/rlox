@@ -85,6 +85,17 @@ impl Chunk {
             Divide => Self::simple_instruction("Divide", buffer, at, line),
             Negate => Self::simple_instruction("Negate", buffer, at, line),
 
+            // bindings
+            DefineGlobal => {
+                let c = self
+                    .read_string(at + 1)
+                    .unwrap_or_else(|| panic!("String at index {:?} should exist", at + 1));
+
+                writeln!(buffer, "{:8} {:8} | Global {:?}", at, line, c);
+
+                at + 2
+            }
+
             // statements
             Print => Self::simple_instruction("Print", buffer, at, line),
             Pop => Self::simple_instruction("Pop", buffer, at, line),

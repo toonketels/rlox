@@ -83,6 +83,16 @@ impl Chunk {
         self.write_byte(at as Byte, line);
     }
 
+    pub fn write_global_name(&mut self, str: String, line: usize) {
+        let index = self.strings.add(str);
+
+        let at = Byte::try_from(index)
+            .expect("Global variable name added at index out of range for byte");
+
+        self.write_code(OpCode::DefineGlobal, line);
+        self.write_byte(at as Byte, line);
+    }
+
     pub fn write_string(&mut self, str: String, line: usize) {
         let index = self.strings.add(str);
 
