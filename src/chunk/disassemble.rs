@@ -87,6 +87,7 @@ impl Chunk {
 
             // statements
             Print => Self::simple_instruction("Print", buffer, at, line),
+            Pop => Self::simple_instruction("Pop", buffer, at, line),
             Return => Self::simple_instruction("Return", buffer, at, line),
         }
     }

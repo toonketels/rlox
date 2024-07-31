@@ -309,7 +309,9 @@ impl<'a> Parser<'a> {
     fn parse_statement(&mut self) -> Result<(), InterpretError> {
         match self.current()?.kind {
             TokenKind::Print => self.print_statement(),
-            _ => self.parse_expression(0), // for now, default to just parsing expressions so all our tests still work
+            // @TODO replace parse_expression by parse_expression_statement and no longer return value from interpret
+            _ => self.parse_expression(0),
+            // _ => self.parse_expression_statement(),
         }
     }
 
@@ -318,6 +320,13 @@ impl<'a> Parser<'a> {
         self.parse_expression(0)?;
         self.advance_if_current_is(TokenKind::Semicolon, "Expected ';' after value");
         self.emit_op_code(OpCode::Print, self.line)
+    }
+
+    // Evaluates the expression and throws away the result
+    fn parse_expression_statement(&mut self) -> Result<(), InterpretError> {
+        self.parse_expression(0);
+        self.advance_if_current_is(TokenKind::Semicolon, "Expected ';' after value");
+        self.emit_op_code(OpCode::Pop, self.line)
     }
 }
 

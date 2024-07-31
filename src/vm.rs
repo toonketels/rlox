@@ -214,6 +214,9 @@ impl<'a> Vm<'a> {
                 Print => {
                     self.print();
                 }
+                Pop => {
+                    self.pop_stack();
+                }
             }
         }
     }

@@ -181,6 +181,7 @@ pub enum OpCode {
     Negate,
 
     Print,
+    Pop, // pops a value from the stack to throw it away
 
     Return,
 }
