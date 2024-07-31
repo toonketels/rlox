@@ -1,7 +1,7 @@
 use crate::chunk::Chunk;
-use crate::heap::pointer::PointerHeap as Heap;
+use crate::heap::rc::RcHeap as Heap;
 use crate::opcode::Value::{Bool, Number};
-use crate::opcode::{Byte, Obj, OpCode, Value};
+use crate::opcode::{Byte, Obj, OpCode, Returned, Value};
 use crate::tokenizer::TokenKind;
 use crate::vm::InterpretError::{RuntimeError, RuntimeErrorWithReason};
 use stack::Stack;
@@ -61,9 +61,12 @@ impl Display for InterpretError {
     }
 }
 
-pub fn interpret(chunk: &Chunk) -> Result<Value, InterpretError> {
+pub fn interpret(chunk: &Chunk) -> Result<Returned, InterpretError> {
     let mut vm = Vm::new(chunk);
-    vm.run()
+    let result = vm.run();
+    // Not strictly necessary to call free_all as it would be dropped by just going out of scope too
+    vm.heap.free_all();
+    result.map(Returned::from)
 }
 
 impl<'a> Vm<'a> {
@@ -226,7 +229,7 @@ mod tests {
         let chunk = Parser::parse(Tokenizer::new("10 + 30 * 2")).unwrap();
         let result = interpret(&chunk).unwrap();
 
-        assert_eq!(result, Value::Number(70.0));
+        assert_eq!(result, Returned::Number(70.0));
     }
 
     #[test]
@@ -241,7 +244,7 @@ mod tests {
         let chunk = Parser::parse(Tokenizer::new("nil")).unwrap();
         let result = interpret(&chunk).unwrap();
 
-        assert_eq!(result, Value::Nil);
+        assert_eq!(result, Returned::Nil);
     }
 
     #[test]
@@ -349,16 +352,12 @@ mod tests {
         let chunk = Parser::parse(Tokenizer::new("\"hello world\"")).unwrap();
         let result = interpret(&chunk).unwrap();
 
-        if let Value::Object(it) = result {
-            assert_eq!(
-                *it.as_ref(),
-                Obj::String {
-                    str: "hello world".to_string()
-                }
-            );
-        } else {
-            panic!("not an Object")
-        }
+        assert_eq!(
+            result,
+            Returned::Object(Obj::String {
+                str: "hello world".to_string()
+            })
+        )
     }
 
     fn interpret_result_eq_bool(cases: Vec<(&str, bool)>) {
@@ -366,7 +365,7 @@ mod tests {
             let chunk = Parser::parse(Tokenizer::new(source)).unwrap();
             let result = interpret(&chunk).unwrap();
 
-            assert_eq!(result, Value::Bool(expected));
+            assert_eq!(result, Returned::Bool(expected));
         }
     }
 
@@ -375,7 +374,7 @@ mod tests {
             let chunk = Parser::parse(Tokenizer::new(source)).unwrap();
             let result = interpret(&chunk).unwrap();
 
-            assert_eq!(result, Value::Number(expected));
+            assert_eq!(result, Returned::Number(expected));
         }
     }
 }

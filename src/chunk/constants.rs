@@ -17,6 +17,7 @@ impl Constants {
     }
 
     pub fn get(&self, index: usize) -> Option<Value> {
-        self.0.get(index).copied()
+        // Since we are using an rc, we can no longer use copied().
+        self.0.get(index).cloned()
     }
 }

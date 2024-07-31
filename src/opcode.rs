@@ -1,25 +1,48 @@
-use crate::heap::pointer::Pointer;
 use std::fmt::{Debug, Formatter};
 use std::mem;
+use std::rc::Rc;
 
 /// OpCodes used by our vm.
 
 // Each opcode is a byte
 pub type Byte = u8;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Obj {
     // str itself is heap allocated
     String { str: String },
 }
 
 // Constants etc.
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum Value {
     Number(f64),
     Bool(bool),
-    Object(Pointer),
+    Object(Rc<Obj>),
     Nil,
+}
+
+// An owned version of value so we can clean up the heap and return the value
+#[derive(Clone, PartialEq, Debug)]
+pub enum Returned {
+    Number(f64),
+    Bool(bool),
+    Object(Obj),
+    Nil,
+}
+
+impl From<Value> for Returned {
+    fn from(value: Value) -> Self {
+        match value {
+            Value::Number(it) => Returned::Number(it),
+            Value::Bool(it) => Returned::Bool(it),
+            Value::Object(it) => {
+                let it = it.as_ref();
+                Returned::Object(it.clone())
+            }
+            Value::Nil => Returned::Nil,
+        }
+    }
 }
 
 impl Debug for Value {
