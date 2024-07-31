@@ -1,3 +1,4 @@
+use crate::heap::pointer::Pointer;
 use std::fmt::{Debug, Formatter};
 use std::mem;
 
@@ -6,7 +7,7 @@ use std::mem;
 // Each opcode is a byte
 pub type Byte = u8;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Obj {
     // str itself is heap allocated
     String { str: String },
@@ -17,9 +18,7 @@ pub enum Obj {
 pub enum Value {
     Number(f64),
     Bool(bool),
-    // pretend it is static because it is managed by us
-    // @TODO correct it
-    Object(usize),
+    Object(Pointer),
     Nil,
 }
 
@@ -28,7 +27,7 @@ impl Debug for Value {
         match self {
             Value::Number(it) => write!(f, "{:?}", it),
             Value::Bool(it) => write!(f, "{:?}", it),
-            Value::Object(it) => write!(f, "Object({:?})", it),
+            Value::Object(it) => write!(f, "Object({:?})", *it.as_ref()),
             Value::Nil => write!(f, "nil"),
         }
     }
@@ -77,16 +76,6 @@ impl Value {
             panic!("Value is not a nil")
         }
     }
-
-    // pub fn as_object(&self) -> &Obj {
-    //     if let Value::Object(it) = self {
-    //         let pointer = unsafe { *it };
-    //         let it = unsafe { &*pointer };
-    //         it
-    //     } else {
-    //         panic!("Value is not an object")
-    //     }
-    // }
 }
 
 #[derive(Debug)]

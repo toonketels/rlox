@@ -1,5 +1,5 @@
 use crate::chunk::Chunk;
-use crate::heap::offset::OffsetHeap as Heap;
+use crate::heap::pointer::PointerHeap as Heap;
 use crate::opcode::Value::{Bool, Number};
 use crate::opcode::{Byte, Obj, OpCode, Value};
 use crate::tokenizer::TokenKind;
@@ -349,8 +349,16 @@ mod tests {
         let chunk = Parser::parse(Tokenizer::new("\"hello world\"")).unwrap();
         let result = interpret(&chunk).unwrap();
 
-        // Object is the first one allocated so it points to 0
-        assert_eq!(result, Value::Object(0));
+        if let Value::Object(it) = result {
+            assert_eq!(
+                *it.as_ref(),
+                Obj::String {
+                    str: "hello world".to_string()
+                }
+            );
+        } else {
+            panic!("not an Object")
+        }
     }
 
     fn interpret_result_eq_bool(cases: Vec<(&str, bool)>) {
