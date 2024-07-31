@@ -229,6 +229,24 @@ impl<'a> Vm<'a> {
                     self.globals.insert(name, value);
                 }
 
+                GetGlobal => {
+                    let name = self.read_global_name()?;
+                    let value = self.globals.get(&name).unwrap_or(&Value::Nil);
+                    self.push_stack(value.clone())
+                }
+
+                SetGlobal => {
+                    let name = self.read_global_name()?;
+                    let value = self.pop_stack()?;
+                    if let std::collections::hash_map::Entry::Occupied(mut e) =
+                        self.globals.entry(name)
+                    {
+                        e.insert(value);
+                    } else {
+                        Err(RuntimeErrorWithReason("Global is not defined"))?
+                    }
+                }
+
                 // statements
                 Print => {
                     self.print();
@@ -419,11 +437,26 @@ mod tests {
     }
 
     #[test]
+    fn interpret_var_statements() {
+        interpret_result(vec![("var summed = 5 + 2; print summed *2;", 14.0)]);
+    }
+
+    #[test]
+    fn interpret_unknown_globals_are_nil() {
+        // @TODO treat as runtime error instead
+        interpret_result(vec![("print unknown;", Value::Nil)]);
+    }
+
+    #[test]
+    fn interpret_set_global() {
+        interpret_result(vec![("var it; it = 3 + 5; print it;", 8.0)]);
+    }
+
+    #[test]
     #[should_panic]
-    fn interpret_var_statement() {
-        // Tests currently fails because there is nothing to pop from the stack to return yet
-        // @TODO fix as we can read vars
-        interpret_result(vec![("var hello = 5 + 2;", 7.0)]);
+    fn interpret_set_global_undefined() {
+        // throws error global not defined
+        interpret_result(vec![("var it; unknown = 3 + 5; print unknown;", 8.0)]);
     }
 
     fn interpret_result<T>(cases: Vec<(&str, T)>)

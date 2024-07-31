@@ -91,7 +91,25 @@ impl Chunk {
                     .read_string(at + 1)
                     .unwrap_or_else(|| panic!("String at index {:?} should exist", at + 1));
 
-                writeln!(buffer, "{:8} {:8} | Global {:?}", at, line, c);
+                writeln!(buffer, "{:8} {:8} | Global define {:?}", at, line, c);
+
+                at + 2
+            }
+            GetGlobal => {
+                let c = self
+                    .read_string(at + 1)
+                    .unwrap_or_else(|| panic!("String at index {:?} should exist", at + 1));
+
+                writeln!(buffer, "{:8} {:8} | Global get {:?}", at, line, c);
+
+                at + 2
+            }
+            SetGlobal => {
+                let c = self
+                    .read_string(at + 1)
+                    .unwrap_or_else(|| panic!("String at index {:?} should exist", at + 1));
+
+                writeln!(buffer, "{:8} {:8} | Global set {:?}", at, line, c);
 
                 at + 2
             }

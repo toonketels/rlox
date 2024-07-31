@@ -182,6 +182,8 @@ pub enum OpCode {
 
     // binding
     DefineGlobal,
+    GetGlobal,
+    SetGlobal,
 
     Print,
     Pop, // pops a value from the stack to throw it away

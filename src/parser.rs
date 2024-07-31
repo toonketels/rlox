@@ -88,6 +88,7 @@ impl<'a> Parser<'a> {
             TokenKind::False | TokenKind::True | TokenKind::Nil => self.parse_literal(),
             TokenKind::LeftParen => self.parse_grouping(),
             TokenKind::Minus | TokenKind::Bang => self.parse_unary(),
+            TokenKind::Identifier => self.parse_named_variable(),
             _ => todo!(),
         }?;
 
@@ -151,6 +152,25 @@ impl<'a> Parser<'a> {
         let line = self.line;
         self.advance();
         self.emit_string(it, line);
+        Ok(())
+    }
+
+    fn parse_named_variable(&mut self) -> Result<(), InterpretError> {
+        let name = self.parse_var_name()?;
+        let line = self.line;
+        match self.current()?.kind {
+            TokenKind::Equal => {
+                self.advance();
+                self.parse_expression(0)?;
+                self.advance_if_current_is(
+                    TokenKind::Semicolon,
+                    "Expected ';' after variable declaration",
+                )?;
+                self.emit_set_global_name(name, line)?
+            }
+            _ => self.emit_get_global_name(name, line)?,
+        }
+
         Ok(())
     }
 
@@ -295,13 +315,33 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn emit_global_name(
+    fn emit_define_global_name(
         &mut self,
         str: std::string::String,
         line: usize,
     ) -> Result<(), InterpretError> {
         // @TODO error handling out of range
-        self.chunk.write_global_name(str, line);
+        self.chunk.write_define_global_name(str, line);
+        Ok(())
+    }
+
+    fn emit_set_global_name(
+        &mut self,
+        str: std::string::String,
+        line: usize,
+    ) -> Result<(), InterpretError> {
+        // @TODO error handling out of range
+        self.chunk.write_set_global_name(str, line);
+        Ok(())
+    }
+
+    fn emit_get_global_name(
+        &mut self,
+        str: std::string::String,
+        line: usize,
+    ) -> Result<(), InterpretError> {
+        // @TODO error handling out of range
+        self.chunk.read_global_name(str, line);
         Ok(())
     }
 
@@ -361,7 +401,7 @@ impl<'a> Parser<'a> {
             "Expected ';' after variable declaration",
         )?;
 
-        self.emit_global_name(name, self.line)
+        self.emit_define_global_name(name, self.line)
     }
 
     fn parse_var_name(&mut self) -> Result<String, InterpretError> {
@@ -506,8 +546,50 @@ mod tests {
        0        0 | Constant 5.0
        2        0 | Constant 3.0
        4        0 | Add
-       5        0 | Global "it"
+       5        0 | Global define "it"
        7        0 | Return
+"#;
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn parse_var_declaration_2() {
+        let it = Parser::parse(Tokenizer::new("var it = hello;"));
+
+        assert!(it.is_ok());
+
+        let output = it
+            .unwrap()
+            .disassemble_into_string("parse var declaration 2");
+        let expected = r#"
+== parse var declaration 2 ==
+       0        0 | Global get "hello"
+       2        0 | Global define "it"
+       4        0 | Return
+"#;
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn parse_var_declaration_3() {
+        let it = Parser::parse(Tokenizer::new("var it; it = 3 + 5; print it;"));
+
+        assert!(it.is_ok());
+
+        let output = it
+            .unwrap()
+            .disassemble_into_string("parse var declaration 2");
+        let expected = r#"
+== parse var declaration 2 ==
+       0        0 | Nil
+       1        0 | Global define "it"
+       3        0 | Constant 3.0
+       5        0 | Constant 5.0
+       7        0 | Add
+       8        0 | Global set "it"
+      10        0 | Global get "it"
+      12        0 | Print
+      13        0 | Return
 "#;
         assert_eq!(output, expected);
     }
