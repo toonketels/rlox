@@ -67,6 +67,7 @@ impl<'a> Parser<'a> {
         // prefix / nud position
         match self.current()?.kind {
             TokenKind::Number => self.parse_number(),
+            TokenKind::String => self.parse_string(),
             TokenKind::False | TokenKind::True | TokenKind::Nil => self.parse_literal(),
             TokenKind::LeftParen => self.parse_grouping(),
             TokenKind::Minus | TokenKind::Bang => self.parse_unary(),
@@ -118,6 +119,21 @@ impl<'a> Parser<'a> {
         let line = self.line;
         self.advance();
         self.emit_constant(Number(it), line);
+        Ok(())
+    }
+
+    fn parse_string(&mut self) -> Result<(), InterpretError> {
+        let it = self
+            .current()?
+            .source
+            .strip_prefix('"')
+            .expect("source strings start with \"")
+            .strip_suffix('"')
+            .expect("source strings start with \"")
+            .to_string();
+        let line = self.line;
+        self.advance();
+        self.emit_string(it, line);
         Ok(())
     }
 
@@ -256,6 +272,12 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
+    fn emit_string(&mut self, str: std::string::String, line: usize) -> Result<(), InterpretError> {
+        // @TODO error handling out of range
+        self.chunk.write_string(str, line);
+        Ok(())
+    }
+
     fn emit_return(&mut self, line: usize) -> Result<(), InterpretError> {
         self.emit_op_code(OpCode::Return, line)?;
         Ok(())
@@ -342,6 +364,21 @@ mod tests {
        6        0 | Constant 40.0
        8        0 | Multiply
        9        0 | Return
+"#;
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn parse_5() {
+        let it = Parser::parse(Tokenizer::new("\"hello world\""));
+
+        assert!(it.is_ok());
+
+        let output = it.unwrap().disassemble_into_string("parse 5");
+        let expected = r#"
+== parse 5 ==
+       0        0 | String "hello world"
+       2        0 | Return
 "#;
         assert_eq!(output, expected);
     }

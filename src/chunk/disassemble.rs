@@ -60,6 +60,15 @@ impl Chunk {
             False => Self::simple_instruction("False", buffer, at, line),
             True => Self::simple_instruction("True", buffer, at, line),
             Nil => Self::simple_instruction("Nil", buffer, at, line),
+            String => {
+                let c = self
+                    .read_string(at + 1)
+                    .unwrap_or_else(|| panic!("String at index {:?} should exist", at + 1));
+
+                writeln!(buffer, "{:8} {:8} | String {:?}", at, line, c);
+
+                at + 2
+            }
 
             // comparison
             Equal => Self::simple_instruction("Equal", buffer, at, line),

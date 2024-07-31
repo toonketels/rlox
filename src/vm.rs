@@ -1,6 +1,7 @@
 use crate::chunk::Chunk;
+use crate::heap::offset::OffsetHeap as Heap;
 use crate::opcode::Value::{Bool, Number};
-use crate::opcode::{Byte, OpCode, Value};
+use crate::opcode::{Byte, Obj, OpCode, Value};
 use crate::tokenizer::TokenKind;
 use crate::vm::InterpretError::{RuntimeError, RuntimeErrorWithReason};
 use stack::Stack;
@@ -13,6 +14,7 @@ mod stack;
 pub struct Vm<'a> {
     chunk: &'a Chunk,
     stack: Stack,
+    heap: Heap,
     ip: usize,
 }
 
@@ -69,6 +71,7 @@ impl<'a> Vm<'a> {
         Vm {
             chunk,
             stack: Stack::new(),
+            heap: Heap::new(),
             ip: 0,
         }
     }
@@ -86,6 +89,15 @@ impl<'a> Vm<'a> {
 
     fn read_constant(&mut self) -> Result<Value, InterpretError> {
         self.chunk.read_constant(self.advance()).ok_or(RuntimeError)
+    }
+
+    fn read_string(&mut self) -> Result<Value, InterpretError> {
+        let it = self.chunk.read_string(self.advance());
+        let str = it.ok_or(RuntimeError)?;
+        let obj = self.heap.alloc(Obj::String {
+            str: str.to_string(),
+        });
+        Ok(Value::Object(obj))
     }
 
     fn push_stack(&mut self, value: Value) {
@@ -151,6 +163,11 @@ impl<'a> Vm<'a> {
                 False => self.push_stack(Bool(false)),
                 True => self.push_stack(Bool(true)),
                 Nil => self.push_stack(Value::Nil),
+                String => {
+                    let x = self.read_string()?;
+                    // @todo turn into string Value
+                    self.push_stack(x)
+                }
 
                 // Comparison
                 Equal => {
@@ -320,12 +337,20 @@ mod tests {
 
         interpret_result_eq_bool(cases)
     }
-
     #[test]
-    fn interpret_test_1() {
+    fn interpret_expression() {
         let cases = vec![("!(5 - 4 > 3 * 2 == !nil)", true)];
 
         interpret_result_eq_bool(cases)
+    }
+
+    #[test]
+    fn interpret_strings() {
+        let chunk = Parser::parse(Tokenizer::new("\"hello world\"")).unwrap();
+        let result = interpret(&chunk).unwrap();
+
+        // Object is the first one allocated so it points to 0
+        assert_eq!(result, Value::Object(0));
     }
 
     fn interpret_result_eq_bool(cases: Vec<(&str, bool)>) {

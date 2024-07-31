@@ -6,11 +6,20 @@ use std::mem;
 // Each opcode is a byte
 pub type Byte = u8;
 
+#[derive(Debug)]
+pub enum Obj {
+    // str itself is heap allocated
+    String { str: String },
+}
+
 // Constants etc.
 #[derive(Copy, Clone, PartialEq)]
 pub enum Value {
     Number(f64),
     Bool(bool),
+    // pretend it is static because it is managed by us
+    // @TODO correct it
+    Object(usize),
     Nil,
 }
 
@@ -19,6 +28,7 @@ impl Debug for Value {
         match self {
             Value::Number(it) => write!(f, "{:?}", it),
             Value::Bool(it) => write!(f, "{:?}", it),
+            Value::Object(it) => write!(f, "Object({:?})", it),
             Value::Nil => write!(f, "nil"),
         }
     }
@@ -38,6 +48,7 @@ impl Value {
             Value::Nil => false,
             Value::Bool(it) => *it,
             Value::Number(it) => *it != 0.0, // all number are truthy expect for 0
+            Value::Object(it) => false,      // @TODO revisit it
         }
     }
     pub fn is_nil(&self) -> bool {
@@ -66,6 +77,16 @@ impl Value {
             panic!("Value is not a nil")
         }
     }
+
+    // pub fn as_object(&self) -> &Obj {
+    //     if let Value::Object(it) = self {
+    //         let pointer = unsafe { *it };
+    //         let it = unsafe { &*pointer };
+    //         it
+    //     } else {
+    //         panic!("Value is not an object")
+    //     }
+    // }
 }
 
 #[derive(Debug)]
@@ -77,6 +98,10 @@ pub enum OpCode {
     Nil,
     True,
     False,
+
+    // static strings
+    // not in book, might be a bad idea
+    String,
 
     // comparison
     Equal,
