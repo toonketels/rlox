@@ -13,6 +13,20 @@ pub enum Obj {
     String { str: String },
 }
 
+impl Obj {
+    pub fn is_string(&self) -> bool {
+        matches!(self, Obj::String { str })
+    }
+
+    pub fn as_string(&self) -> &str {
+        if let Obj::String { str } = self {
+            str.as_ref()
+        } else {
+            panic!("Obj is not a string")
+        }
+    }
+}
+
 // Constants etc.
 #[derive(Clone, PartialEq)]
 pub enum Value {
@@ -60,6 +74,14 @@ impl Value {
     pub fn is_number(&self) -> bool {
         matches!(self, Value::Number(_))
     }
+
+    pub fn is_string(&self) -> bool {
+        if let Value::Object(it) = self {
+            it.is_string()
+        } else {
+            false
+        }
+    }
     pub fn is_bool(&self) -> bool {
         matches!(self, Value::Bool(_))
     }
@@ -82,6 +104,14 @@ impl Value {
             *it
         } else {
             panic!("Value is not a number")
+        }
+    }
+
+    pub fn as_string(&self) -> &str {
+        if let Value::Object(it) = self {
+            it.as_string()
+        } else {
+            panic!("Value is not a string")
         }
     }
 

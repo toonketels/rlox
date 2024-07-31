@@ -1,6 +1,6 @@
 use crate::chunk::Chunk;
 use crate::heap::rc::RcHeap as Heap;
-use crate::opcode::Value::{Bool, Number};
+use crate::opcode::Value::{Bool, Number, Object};
 use crate::opcode::{Byte, Obj, OpCode, Returned, Value};
 use crate::tokenizer::TokenKind;
 use crate::vm::InterpretError::{RuntimeError, RuntimeErrorWithReason};
@@ -182,7 +182,15 @@ impl<'a> Vm<'a> {
                 Less => binary_op_bool!(<),
 
                 // Arithmetic
-                Add => binary_op_number!(+),
+                Add => {
+                    let is_string = self.peek_stack(0).is_some_and(|it| it.is_string())
+                        && self.peek_stack(1).is_some_and(|it| it.is_string());
+                    if is_string {
+                        self.string_concatenate()?;
+                    } else {
+                        binary_op_number!(+)
+                    }
+                }
                 Subtract => binary_op_number!(-),
                 Multiply => binary_op_number!(*),
                 Divide => binary_op_number!(/),
@@ -201,6 +209,16 @@ impl<'a> Vm<'a> {
                 }
             }
         }
+    }
+
+    fn string_concatenate(&mut self) -> Result<(), InterpretError> {
+        let rhs = self.pop_stack()?;
+        let lhs = self.pop_stack()?;
+        let it = self.heap.alloc(Obj::String {
+            str: lhs.as_string().to_string() + rhs.as_string(),
+        });
+        self.push_stack(Object(it));
+        Ok(())
     }
 
     fn read_decode(&mut self) -> Result<OpCode, InterpretError> {
@@ -360,6 +378,28 @@ mod tests {
         )
     }
 
+    #[test]
+    fn interpret_string_equality() {
+        let cases = vec![
+            ("\"ok\" == \"ok\"", true),
+            ("\"ok\" == \"nok\"", false),
+            ("\"ok\" != \"nok\"", true),
+            ("\"ok\" != \"ok\"", false),
+        ];
+
+        interpret_result_eq_bool(cases)
+    }
+
+    #[test]
+    fn interpret_string_concatenation() {
+        let cases = vec![
+            ("\"hello \" + \"world\"", "hello world"),
+            ("\"hello\" + \" \"  + \"world\"", "hello world"),
+        ];
+
+        interpret_result_eq_string(cases)
+    }
+
     fn interpret_result_eq_bool(cases: Vec<(&str, bool)>) {
         for (source, expected) in cases {
             let chunk = Parser::parse(Tokenizer::new(source)).unwrap();
@@ -375,6 +415,20 @@ mod tests {
             let result = interpret(&chunk).unwrap();
 
             assert_eq!(result, Returned::Number(expected));
+        }
+    }
+
+    fn interpret_result_eq_string(cases: Vec<(&str, &str)>) {
+        for (source, expected) in cases {
+            let chunk = Parser::parse(Tokenizer::new(source)).unwrap();
+            let result = interpret(&chunk).unwrap();
+
+            assert_eq!(
+                result,
+                Returned::Object(Obj::String {
+                    str: expected.to_string()
+                })
+            )
         }
     }
 }
