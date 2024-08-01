@@ -8,7 +8,7 @@ use crate::vm::CompilationErrorReason::{
     NotEnoughTokens, ParseFloatError, TooMayTokens,
 };
 use crate::vm::InterpretError;
-use crate::vm::InterpretError::CompileError;
+use crate::vm::InterpretError::{CompileError, RuntimeErrorWithReason};
 
 #[derive(Debug)]
 pub struct Parser<'a> {
@@ -88,13 +88,13 @@ impl<'a> Parser<'a> {
             TokenKind::False | TokenKind::True | TokenKind::Nil => self.parse_literal(),
             TokenKind::LeftParen => self.parse_grouping(),
             TokenKind::Minus | TokenKind::Bang => self.parse_unary(),
-            TokenKind::Identifier => self.parse_named_variable(),
+            TokenKind::Identifier => self.parse_named_variable(precedence),
             _ => todo!(),
         }?;
 
         while let Some(op) = self.current.as_ref() {
             if self.precedence(op.kind) > precedence {
-                self.parse_binary();
+                self.parse_binary()?;
             } else {
                 break;
             }
@@ -155,11 +155,11 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn parse_named_variable(&mut self) -> Result<(), InterpretError> {
+    fn parse_named_variable(&mut self, precedence: i32) -> Result<(), InterpretError> {
         let name = self.parse_var_name()?;
         let line = self.line;
         match self.current()?.kind {
-            TokenKind::Equal => {
+            TokenKind::Equal if precedence <= self.precedence(TokenKind::Equal) => {
                 self.advance();
                 self.parse_expression(0)?;
                 self.advance_if_current_is(
@@ -168,6 +168,10 @@ impl<'a> Parser<'a> {
                 )?;
                 self.emit_set_global_name(name, line)?
             }
+            // Trying to assign while we are in a statement like `2 * b = 3 + 5`
+            // b should not be assigned here
+            // we know this because the * pushes a higher precedence level then =
+            TokenKind::Equal => Err(RuntimeErrorWithReason("Invalid assignment target"))?,
             _ => self.emit_get_global_name(name, line)?,
         }
 

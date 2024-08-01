@@ -30,8 +30,7 @@ impl Strings {
     }
 
     pub fn get(&self, index: usize) -> Option<&String> {
-        let it = self.0.get(index);
-        it
+        self.0.get(index)
     }
 }
 

@@ -129,6 +129,10 @@ impl<'a> Vm<'a> {
         self.stack.peek(offset)
     }
 
+    fn peek_stack_expected(&mut self, offset: usize) -> Result<&Value, InterpretError> {
+        self.peek_stack(offset).ok_or(StackUnderflowError)
+    }
+
     pub fn run(&mut self) -> Result<Value, InterpretError> {
         macro_rules! binary_op_number {
             ($op:tt) => {
@@ -237,7 +241,7 @@ impl<'a> Vm<'a> {
 
                 SetGlobal => {
                     let name = self.read_global_name()?;
-                    let value = self.pop_stack()?;
+                    let value = self.peek_stack_expected(0)?.clone(); // we dont pop from the stack
                     if let std::collections::hash_map::Entry::Occupied(mut e) =
                         self.globals.entry(name)
                     {
@@ -450,6 +454,18 @@ mod tests {
     #[test]
     fn interpret_set_global() {
         interpret_result(vec![("var it; it = 3 + 5; print it;", 8.0)]);
+    }
+
+    #[test]
+    #[should_panic]
+    fn interpret_set_global_illegal_grammar() {
+        // This should throw because `a * b = 3 + 8;` mixes variable assignment
+        // in an expression which is nonsense
+        // Proper way for writing is:
+        // var b = 3 + 8;
+        //  1 * b;
+        // print b;
+        interpret_result(vec![("var b; 1 * b = 3 + 8; print b;", 11.0)]);
     }
 
     #[test]
