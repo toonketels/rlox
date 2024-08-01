@@ -113,6 +113,26 @@ impl Chunk {
 
                 at + 2
             }
+            GetLocal => {
+                writeln!(
+                    buffer,
+                    "{:8} {:8} | Local var get index({:?})",
+                    at,
+                    line,
+                    at + 1
+                );
+                at + 2
+            }
+            SetLocal => {
+                writeln!(
+                    buffer,
+                    "{:8} {:8} | Local var set index({:?})",
+                    at,
+                    line,
+                    at + 1
+                );
+                at + 2
+            }
 
             // statements
             Print => Self::simple_instruction("Print", buffer, at, line),

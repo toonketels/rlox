@@ -28,6 +28,7 @@ pub enum CompilationErrorReason {
     ExpectedRightParen,
     ExpectedPrefix,
     ExpectedBinaryOperator,
+    ScopeUnderflow,
     ExpectedDifferentToken {
         expected: TokenKind,
         received: TokenKind,
@@ -125,7 +126,7 @@ impl<'a> Vm<'a> {
         self.stack.pop().ok_or(StackUnderflowError)
     }
 
-    fn peek_stack(&mut self, offset: usize) -> Option<&Value> {
+    fn peek_stack(&self, offset: usize) -> Option<&Value> {
         self.stack.peek(offset)
     }
 
@@ -169,7 +170,16 @@ impl<'a> Vm<'a> {
             match self.read_decode()? {
                 // We are done
                 Return => {
+                    // there should be just one value on the stack which will be popped before we exit
+
                     let it = self.pop_stack()?;
+
+                    if !self.stack.is_empty() {
+                        println!("stack not empty: {:?}", self.stack);
+                        Err(RuntimeErrorWithReason(
+                            "Program terminating but stack is not empty",
+                        ))?;
+                    }
                     println!("Return: {:?}", it);
                     break Ok(it);
                 }
@@ -241,7 +251,9 @@ impl<'a> Vm<'a> {
 
                 SetGlobal => {
                     let name = self.read_global_name()?;
-                    let value = self.peek_stack_expected(0)?.clone(); // we dont pop from the stack
+                    // we dont pop from the stack according to the book
+                    // that seems odd so we dont
+                    let value = self.pop_stack()?;
                     if let std::collections::hash_map::Entry::Occupied(mut e) =
                         self.globals.entry(name)
                     {
@@ -251,12 +263,30 @@ impl<'a> Vm<'a> {
                     }
                 }
 
+                GetLocal => {
+                    // next byte contains the local_var_offset
+                    let at = self.read_byte().ok_or(RuntimeError)?;
+                    let value = self.stack.get(at as usize).ok_or(RuntimeErrorWithReason(
+                        "Local variable value could not be found",
+                    ))?;
+                    self.push_stack(value.clone());
+                }
+
+                SetLocal => {
+                    // next byte contains the local_var_offset
+                    let at = self.read_byte().ok_or(RuntimeError)?;
+                    // According to the book, we should just peek the stack to not modify if but
+                    // then our stack just keeps growing so better pop it.
+                    let value = self.pop_stack()?;
+                    self.stack.set(at as usize, value.clone());
+                }
+
                 // statements
                 Print => {
-                    self.print();
+                    self.print()?;
                 }
                 Pop => {
-                    self.pop_stack();
+                    self.pop_stack()?;
                 }
             }
         }
@@ -286,18 +316,21 @@ impl<'a> Vm<'a> {
     }
 
     fn print(&mut self) -> Result<(), InterpretError> {
+        // According to the book: `Print is a statement so does not modify the stack`
+        // But that means our stack just keeps growing?
+        // Lets just pop the argument to print so that after print our
+        // stack is back where it was so
+        // our program exists correctly with an empty stack
         let it = self.pop_stack()?;
         println!("PRINTED: {:?}", &it);
-        // Push the value back onto the stack so we can still return it
-        self.push_stack(it);
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
+    use crate::opcode::Value::Nil;
     use crate::parser::Parser;
     use crate::tokenizer::Tokenizer;
 
@@ -425,35 +458,38 @@ mod tests {
 
     #[test]
     fn interpret_print_statement() {
-        interpret_result(vec![("print 5 + 2;", 7.0)]);
+        interpret_result(vec![("return 5 + 2;", 7.0)]);
 
         interpret_result(vec![
-            ("print 5 > 2;", true),
-            ("print 5 >= 5;", true),
-            ("print 5 <= 7;", true),
-            ("print 5 != 7;", true),
+            ("return 5 > 2;", true),
+            ("return 5 >= 5;", true),
+            ("return 5 <= 7;", true),
+            ("return 5 != 7;", true),
         ]);
 
         interpret_result(vec![
-            ("print \"hello \" + \"world\";", "hello world"),
+            ("return \"hello \" + \"world\";", "hello world"),
             ("\"hello\" + \" \"  + \"world\"", "hello world"),
         ])
     }
 
     #[test]
     fn interpret_var_statements() {
-        interpret_result(vec![("var summed = 5 + 2; print summed *2;", 14.0)]);
+        interpret_result(vec![(
+            "var summed = 5 + 2; print summed *2; return summed * 2;",
+            14.0,
+        )]);
     }
 
     #[test]
     fn interpret_unknown_globals_are_nil() {
         // @TODO treat as runtime error instead
-        interpret_result(vec![("print unknown;", Value::Nil)]);
+        interpret_result(vec![("return unknown;", Value::Nil)]);
     }
 
     #[test]
     fn interpret_set_global() {
-        interpret_result(vec![("var it; it = 3 + 5; print it;", 8.0)]);
+        interpret_result(vec![("var it; it = 3 + 5; return it;", 8.0)]);
     }
 
     #[test]
@@ -465,14 +501,57 @@ mod tests {
         // var b = 3 + 8;
         //  1 * b;
         // print b;
-        interpret_result(vec![("var b; 1 * b = 3 + 8; print b;", 11.0)]);
+        interpret_result(vec![("var b; 1 * b = 3 + 8; return b;", 11.0)]);
     }
 
     #[test]
     #[should_panic]
     fn interpret_set_global_undefined() {
         // throws error global not defined
-        interpret_result(vec![("var it; unknown = 3 + 5; print unknown;", 8.0)]);
+        interpret_result(vec![("var it; unknown = 3 + 5; return unknown;", 8.0)]);
+    }
+
+    #[test]
+    fn interpret_block_statements_1() {
+        interpret_result(vec![("{ var x = 15; var y; } return;", Nil)]);
+    }
+
+    #[test]
+    fn interpret_block_statements_2() {
+        interpret_result(vec![("{ var x; x = 10; print x; } return;", Nil)]);
+    }
+
+    #[test]
+    fn interpret_block_statements_3() {
+        interpret_result(vec![("{ var x; print x; } return;", Nil)]);
+    }
+
+    #[test]
+    fn interpret_block_statements_4() {
+        interpret_result(vec![(
+            "{ var x; var y; x = 10; y = 20; print x; } return;",
+            Nil,
+        )]);
+    }
+    #[test]
+    fn interpret_block_statements_5() {
+        interpret_result(vec![("var x; { x = 10; var y = 20; } return x;", 10.0)]);
+    }
+
+    #[test]
+    fn interpret_block_statements_6() {
+        interpret_result(vec![(
+            "var z; { var x; var y; x = 10; y = 20; z = y; } return z;",
+            20.0,
+        )]);
+    }
+
+    #[test]
+    fn interpret_block_statements_7() {
+        interpret_result(vec![(
+            "var z; { var x; var y; x = 10; y = 20; z = y; } return;",
+            Nil,
+        )]);
     }
 
     fn interpret_result<T>(cases: Vec<(&str, T)>)

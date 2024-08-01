@@ -1,5 +1,6 @@
 use crate::chunk::Chunk;
-use crate::opcode::OpCode::{False, Nil, True};
+use crate::compiler::{Compiler, LocalVarResolution};
+use crate::opcode::OpCode::{False, Nil, Return, True};
 use crate::opcode::Value::Number;
 use crate::opcode::{OpCode, Value};
 use crate::tokenizer::{Token, TokenKind, Tokenizer};
@@ -13,6 +14,9 @@ use crate::vm::InterpretError::{CompileError, RuntimeErrorWithReason};
 #[derive(Debug)]
 pub struct Parser<'a> {
     tokenizer: Tokenizer<'a>,
+    // Its weird that the parser owns the compiler, would seem to be the other way around
+    // @TODO fix it
+    compiler: Compiler,
     chunk: Chunk,
     current: Option<Token<'a>>,
     line: usize, // cache latest line
@@ -22,6 +26,7 @@ impl<'a> Parser<'a> {
     pub fn new(tokenizer: Tokenizer<'a>) -> Self {
         Self {
             tokenizer,
+            compiler: Compiler::new(),
             chunk: Chunk::new(),
             current: None,
             line: 0,
@@ -66,7 +71,7 @@ impl<'a> Parser<'a> {
     }
 
     // if the current token is what it expected, consume it
-    fn advance_if_current_is(
+    fn expect_advance(
         &mut self,
         token: TokenKind,
         error: &'static str,
@@ -89,7 +94,11 @@ impl<'a> Parser<'a> {
             TokenKind::LeftParen => self.parse_grouping(),
             TokenKind::Minus | TokenKind::Bang => self.parse_unary(),
             TokenKind::Identifier => self.parse_named_variable(precedence),
-            _ => todo!(),
+            TokenKind::Return => self.parse_return(),
+            it => {
+                println!("token not handled: {:?}", it);
+                todo!()
+            }
         }?;
 
         while let Some(op) = self.current.as_ref() {
@@ -158,21 +167,33 @@ impl<'a> Parser<'a> {
     fn parse_named_variable(&mut self, precedence: i32) -> Result<(), InterpretError> {
         let name = self.parse_var_name()?;
         let line = self.line;
+        let is_local_var = self.compiler.resolve_local_variable(name.as_str());
+        // Trying to assign while we are in a statement like `2 * b = 3 + 5`
+        // b should not be assigned here
+        // we know this because the * pushes a higher precedence level then =
+        // what is legal is just setting the variable:
+        // var x;
+        // x = 15; <- this is what we want to allow here
+        let can_assign = precedence <= self.precedence(TokenKind::Equal);
         match self.current()?.kind {
-            TokenKind::Equal if precedence <= self.precedence(TokenKind::Equal) => {
+            TokenKind::Equal if can_assign => {
                 self.advance();
                 self.parse_expression(0)?;
-                self.advance_if_current_is(
+                self.expect_advance(
                     TokenKind::Semicolon,
                     "Expected ';' after variable declaration",
                 )?;
-                self.emit_set_global_name(name, line)?
+                match is_local_var {
+                    LocalVarResolution::FoundAt(at) => self.emit_set_local_var(at, line)?,
+                    LocalVarResolution::NotFound => self.emit_set_global_var(name, line)?,
+                }
             }
-            // Trying to assign while we are in a statement like `2 * b = 3 + 5`
-            // b should not be assigned here
-            // we know this because the * pushes a higher precedence level then =
+            // Not allowed to assign
             TokenKind::Equal => Err(RuntimeErrorWithReason("Invalid assignment target"))?,
-            _ => self.emit_get_global_name(name, line)?,
+            _ => match is_local_var {
+                LocalVarResolution::FoundAt(at) => self.emit_get_local_var(at, line)?,
+                LocalVarResolution::NotFound => self.emit_get_global_var(name, line)?,
+            },
         }
 
         Ok(())
@@ -319,33 +340,43 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn emit_define_global_name(
+    fn emit_define_global_var(
         &mut self,
         str: std::string::String,
         line: usize,
     ) -> Result<(), InterpretError> {
         // @TODO error handling out of range
-        self.chunk.write_define_global_name(str, line);
+        self.chunk.write_define_global_var(str, line);
         Ok(())
     }
 
-    fn emit_set_global_name(
+    fn emit_set_global_var(
         &mut self,
         str: std::string::String,
         line: usize,
     ) -> Result<(), InterpretError> {
         // @TODO error handling out of range
-        self.chunk.write_set_global_name(str, line);
+        self.chunk.write_set_global_var(str, line);
         Ok(())
     }
 
-    fn emit_get_global_name(
+    fn emit_set_local_var(&mut self, at: usize, line: usize) -> Result<(), InterpretError> {
+        self.chunk.write_set_local_var(at, line);
+        Ok(())
+    }
+
+    fn emit_get_global_var(
         &mut self,
         str: std::string::String,
         line: usize,
     ) -> Result<(), InterpretError> {
         // @TODO error handling out of range
-        self.chunk.read_global_name(str, line);
+        self.chunk.write_get_global_var(str, line);
+        Ok(())
+    }
+
+    fn emit_get_local_var(&mut self, at: usize, line: usize) -> Result<(), InterpretError> {
+        self.chunk.write_get_local_var(at, line);
         Ok(())
     }
 
@@ -355,6 +386,7 @@ impl<'a> Parser<'a> {
     }
 
     // declarations: statements that bind a new name (variable) to a value
+    // If nothing find, starts parsing statements
     fn parse_declaration(&mut self) -> Result<(), InterpretError> {
         match self.current()?.kind {
             TokenKind::Var => self.parse_var_declaration(),
@@ -366,24 +398,25 @@ impl<'a> Parser<'a> {
     // all other statements
     fn parse_statement(&mut self) -> Result<(), InterpretError> {
         match self.current()?.kind {
-            TokenKind::Print => self.print_statement(),
+            TokenKind::Print => self.parse_print_statement(),
+            TokenKind::LeftBrace => self.parse_block(),
             // @TODO replace parse_expression by parse_expression_statement and no longer return value from interpret
             _ => self.parse_expression(0),
             // _ => self.parse_expression_statement(),
         }
     }
 
-    fn print_statement(&mut self) -> Result<(), InterpretError> {
+    fn parse_print_statement(&mut self) -> Result<(), InterpretError> {
         self.advance();
         self.parse_expression(0)?;
-        self.advance_if_current_is(TokenKind::Semicolon, "Expected ';' after value");
+        self.expect_advance(TokenKind::Semicolon, "Expected ';' after value");
         self.emit_op_code(OpCode::Print, self.line)
     }
 
     // Evaluates the expression and throws away the result
     fn parse_expression_statement(&mut self) -> Result<(), InterpretError> {
         self.parse_expression(0);
-        self.advance_if_current_is(TokenKind::Semicolon, "Expected ';' after value");
+        self.expect_advance(TokenKind::Semicolon, "Expected ';' after value");
         self.emit_op_code(OpCode::Pop, self.line)
     }
 
@@ -400,12 +433,15 @@ impl<'a> Parser<'a> {
             _ => self.emit_op_code(OpCode::Nil, self.line),
         }?;
 
-        self.advance_if_current_is(
+        self.expect_advance(
             TokenKind::Semicolon,
             "Expected ';' after variable declaration",
         )?;
 
-        self.emit_define_global_name(name, self.line)
+        match self.compiler.in_local_scope() {
+            true => self.declare_local_var(name),
+            false => self.emit_define_global_var(name, self.line),
+        }
     }
 
     fn parse_var_name(&mut self) -> Result<String, InterpretError> {
@@ -418,6 +454,50 @@ impl<'a> Parser<'a> {
         };
         self.advance();
         it
+    }
+
+    // parses block statement like `{ var x = 34; }
+    fn parse_block(&mut self) -> Result<(), InterpretError> {
+        self.advance();
+        self.compiler.begin_scope()?;
+
+        while !self.current()?.is_kind(TokenKind::RightBrace)
+            && !self.current()?.is_kind(TokenKind::Eof)
+        {
+            self.parse_declaration()?;
+        }
+
+        let mut local_vars_to_pop = self.compiler.end_scope()?;
+        // Pop the local vars from the stack as they are out of scope
+        // becomes more complicated once we work with real stack frames
+        while local_vars_to_pop > 0 {
+            self.emit_op_code(OpCode::Pop, self.line)?;
+            local_vars_to_pop -= 1;
+        }
+
+        self.expect_advance(TokenKind::RightBrace, "Expect '}' after block");
+
+        Ok(())
+    }
+
+    fn declare_local_var(&mut self, name: String) -> Result<(), InterpretError> {
+        self.compiler.add_local_var(name)?;
+        Ok(())
+    }
+
+    fn parse_return(&mut self) -> Result<(), InterpretError> {
+        self.advance();
+
+        match self.current()?.kind {
+            TokenKind::Semicolon => self.emit_op_code(Nil, self.line),
+            _ => self.parse_expression(0),
+        };
+
+        self.expect_advance(
+            TokenKind::Semicolon,
+            "Expected ';' after variable declaration",
+        )?;
+        self.emit_op_code(Return, self.line)
     }
 }
 

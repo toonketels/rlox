@@ -185,6 +185,9 @@ pub enum OpCode {
     GetGlobal,
     SetGlobal,
 
+    SetLocal,
+    GetLocal,
+
     Print,
     Pop, // pops a value from the stack to throw it away
 

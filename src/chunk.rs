@@ -82,7 +82,7 @@ impl Chunk {
         self.write_byte(at as Byte, line);
     }
 
-    pub fn write_define_global_name(&mut self, str: String, line: usize) {
+    pub fn write_define_global_var(&mut self, str: String, line: usize) {
         let index = self.strings.add(str);
 
         let at = Byte::try_from(index)
@@ -92,7 +92,7 @@ impl Chunk {
         self.write_byte(at as Byte, line);
     }
 
-    pub fn write_set_global_name(&mut self, str: String, line: usize) {
+    pub fn write_set_global_var(&mut self, str: String, line: usize) {
         let index = self.strings.add(str);
 
         let at = Byte::try_from(index)
@@ -102,13 +102,29 @@ impl Chunk {
         self.write_byte(at as Byte, line);
     }
 
-    pub fn read_global_name(&mut self, str: String, line: usize) {
+    pub fn write_get_global_var(&mut self, str: String, line: usize) {
         let index = self.strings.add(str);
 
         let at = Byte::try_from(index)
             .expect("Global variable name added at index out of range for byte");
 
         self.write_code(OpCode::GetGlobal, line);
+        self.write_byte(at as Byte, line);
+    }
+
+    pub fn write_set_local_var(&mut self, locals_index: usize, line: usize) {
+        let at = Byte::try_from(locals_index)
+            .expect("Local variable name added at index out of range for byte");
+
+        self.write_code(OpCode::SetLocal, line);
+        self.write_byte(at as Byte, line);
+    }
+
+    pub fn write_get_local_var(&mut self, locals_index: usize, line: usize) {
+        let at = Byte::try_from(locals_index)
+            .expect("Local variable name added at index out of range for byte");
+
+        self.write_code(OpCode::GetLocal, line);
         self.write_byte(at as Byte, line);
     }
 
