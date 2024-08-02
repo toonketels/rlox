@@ -134,43 +134,8 @@ impl Chunk {
             }
 
             // control flow
-            JumpIfFalse => {
-                let it = self
-                    .read_jump(at + 1)
-                    .unwrap_or_else(|| panic!("Jump at index {:?} should exist", at + 1));
-                let adjust_for_jump_byte_width = 2;
-                let adjust_for_ip_points_to_next = 1;
-                writeln!(
-                    buffer,
-                    "{:8} {:8} | If (false) jump to {:?}",
-                    at,
-                    line,
-                    it.distance as usize
-                        + at
-                        + adjust_for_jump_byte_width
-                        + adjust_for_ip_points_to_next
-                );
-                at + 3
-            }
-
-            Jump => {
-                let it = self
-                    .read_jump(at + 1)
-                    .unwrap_or_else(|| panic!("Jump at index {:?} should exist", at + 1));
-                let adjust_for_jump_byte_width = 2;
-                let adjust_for_ip_points_to_next = 1;
-                writeln!(
-                    buffer,
-                    "{:8} {:8} | Jump to {:?}",
-                    at,
-                    line,
-                    it.distance as usize
-                        + at
-                        + adjust_for_jump_byte_width
-                        + adjust_for_ip_points_to_next
-                );
-                at + 3
-            }
+            JumpIfFalse => self.jump_instruction("If (false) jump", buffer, at, line),
+            Jump => self.jump_instruction("Jump", buffer, at, line),
 
             // statements
             Print => Self::simple_instruction("Print", buffer, at, line),
@@ -182,5 +147,28 @@ impl Chunk {
     fn simple_instruction<W: Write>(name: &str, buffer: &mut W, at: usize, line: usize) -> usize {
         writeln!(buffer, "{:8} {:8} | {}", at, line, name);
         at + 1
+    }
+
+    fn jump_instruction<W: Write>(
+        &self,
+        name: &str,
+        buffer: &mut W,
+        at: usize,
+        line: usize,
+    ) -> usize {
+        let it = self
+            .read_jump(at + 1)
+            .unwrap_or_else(|| panic!("Jump at index {:?} should exist", at + 1));
+        let adjust_for_jump_byte_width = 2;
+        let adjust_for_ip_points_to_next = 1;
+        writeln!(
+            buffer,
+            "{:8} {:8} | {} to {:?}",
+            at,
+            line,
+            name,
+            it.distance as usize + at + adjust_for_jump_byte_width + adjust_for_ip_points_to_next
+        ).unwrap();
+        at + 3
     }
 }
