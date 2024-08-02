@@ -190,6 +190,7 @@ pub enum OpCode {
 
     // control flow
     JumpIfFalse,
+    JumpIfTrue,
     Jump,
 
     // Statements

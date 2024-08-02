@@ -307,6 +307,15 @@ impl<'a> Vm<'a> {
                         self.jump(distance)
                     }
                 }
+                JumpIfTrue => {
+                    // Always read the jump as it will update the ip past the Jump bytes
+                    // which we need if we dont jump so the next instruction to fetch
+                    // on false if the on false block
+                    let distance = self.read_jump().ok_or(RuntimeError)?;
+                    if self.pop_stack()?.is_truthy() {
+                        self.jump(distance)
+                    }
+                }
 
                 Jump => {
                     let distance = self.read_jump().ok_or(RuntimeError)?;
@@ -629,6 +638,16 @@ mod tests {
             ("true and true", true),
             ("false and true", false),
             ("false and false", false),
+        ])
+    }
+
+    #[test]
+    fn interpret_or_expression() {
+        interpret_result(vec![
+            ("true or false", true),
+            ("true or true", true),
+            ("false or true", true),
+            ("false or false", false),
         ])
     }
 

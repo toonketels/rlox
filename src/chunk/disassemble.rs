@@ -135,6 +135,7 @@ impl Chunk {
 
             // control flow
             JumpIfFalse => self.jump_instruction("If (false) jump", buffer, at, line),
+            JumpIfTrue => self.jump_instruction("If (true) jump", buffer, at, line),
             Jump => self.jump_instruction("Jump", buffer, at, line),
 
             // statements

@@ -306,6 +306,7 @@ impl<'a> Parser<'a> {
                 self.emit_op_codes(OpCode::Greater, OpCode::Not, line)
             }
             TokenKind::And => self.parse_and_expression(),
+            TokenKind::Or => self.parse_or_expression(),
             _ => Err(CompileError(ExpectedBinaryOperator))?,
         };
 
@@ -540,6 +541,7 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
+    // @TODO consider not popping from stack for conditional jumps
     fn parse_and_expression(&mut self) -> Result<(), InterpretError> {
         // lhs and rhs; continue | if lhs = false -> jump to continue, push false value on stack (as conditional jump popped it)
         // lhs and rhs; continue | if lhs = true  -> pop true, evaluate rhs, stack has value of rhs
@@ -556,6 +558,27 @@ impl<'a> Parser<'a> {
         // false
         self.patch_jump(jump_to_false)?;
         self.emit_op_code(OpCode::False, self.line)?;
+
+        // continue
+        self.patch_jump(jump_to_continue)
+    }
+
+    fn parse_or_expression(&mut self) -> Result<(), InterpretError> {
+        // lhs or rhs; continue | if lhs = true -> jump to continue, push true value on stack (as conditional jump popped it)
+        // lhs or rhs; continue | if lhs = false  -> pop true, evaluate rhs, stack has value of rhs
+
+        self.advance(); // consume and
+
+        // evaluate lhs
+        let jump_to_true = self.emit_jump(OpCode::JumpIfTrue)?;
+
+        // evaluate rhs
+        self.parse_expression(self.precedence(TokenKind::Or))?;
+        let jump_to_continue = self.emit_jump(OpCode::Jump)?;
+
+        // false
+        self.patch_jump(jump_to_true)?;
+        self.emit_op_code(OpCode::True, self.line)?;
 
         // continue
         self.patch_jump(jump_to_continue)
@@ -837,6 +860,23 @@ mod tests {
        4        0 | True
        5        0 | Jump to 9
        8        0 | False
+       9        0 | Return
+"#;
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn parse_or_expression() {
+        let it = Parser::parse(Tokenizer::new("false or true"));
+
+        let output = it.unwrap().disassemble_into_string("parse or expression");
+        let expected = r#"
+== parse or expression ==
+       0        0 | False
+       1        0 | If (true) jump to 8
+       4        0 | True
+       5        0 | Jump to 9
+       8        0 | True
        9        0 | Return
 "#;
         assert_eq!(output, expected);
