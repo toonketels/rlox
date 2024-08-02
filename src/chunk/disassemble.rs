@@ -138,14 +138,17 @@ impl Chunk {
                 let it = self
                     .read_jump(at + 1)
                     .unwrap_or_else(|| panic!("Jump at index {:?} should exist", at + 1));
-                let jump_byte_width = 2;
+                let adjust_for_jump_byte_width = 2;
                 let adjust_for_ip_points_to_next = 1;
                 writeln!(
                     buffer,
                     "{:8} {:8} | If (false) jump to {:?}",
                     at,
                     line,
-                    it.how_far as usize + at + jump_byte_width - adjust_for_ip_points_to_next
+                    it.distance as usize
+                        + at
+                        + adjust_for_jump_byte_width
+                        + adjust_for_ip_points_to_next
                 );
                 at + 3
             }

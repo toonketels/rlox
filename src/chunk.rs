@@ -22,33 +22,35 @@ impl Default for Strings {
 
 #[derive(Default)]
 pub struct Jump {
-    pub how_far: u16,
+    pub distance: u16,
 }
 
 // How for in the code block jump
 impl Jump {
     pub fn calculate(from: usize, to: usize) -> Result<Self, InterpretError> {
-        // to is 13, from is 2
-        let how_far = to - from;
+        // from is address of the patch, contains the Jump
+        // to is address of next code instruction
+        let jump_bytes_width = 2; // To Jump after the opcode is 2 bytes wide
+        let distance = to - from - jump_bytes_width;
 
-        match how_far > u16::MAX as usize {
+        match distance > u16::MAX as usize {
             true => Err(InterpretError::JumpTooFar),
             false => Ok(Jump {
-                how_far: how_far as u16,
+                distance: distance as u16,
             }),
         }
     }
 
     pub fn to_bytes(&self) -> (Byte, Byte) {
-        let lower = self.how_far as u8;
-        let higher = (self.how_far >> 8) as u8;
+        let lower = self.distance as u8;
+        let higher = (self.distance >> 8) as u8;
         (higher, lower)
     }
 
     pub fn from_bytes(higher: Byte, lower: Byte) -> Self {
-        let how_far = (higher as u16) << 8 | (lower as u16);
+        let distance = (higher as u16) << 8 | (lower as u16);
 
-        Self { how_far }
+        Self { distance }
     }
 }
 

@@ -102,7 +102,9 @@ impl<'a> Vm<'a> {
     }
 
     fn read_jump(&mut self) -> Option<Jump> {
-        self.chunk.read_jump(self.advance())
+        let at = self.advance(); // start of jump code
+        self.advance(); // advance once more because a jump is 2 bytes long
+        self.chunk.read_jump(at)
     }
 
     fn read_constant(&mut self) -> Result<Value, InterpretError> {
@@ -181,10 +183,11 @@ impl<'a> Vm<'a> {
                     let it = self.pop_stack()?;
 
                     if !self.stack.is_empty() {
+                        // Currently, we can do an early return and still have some items on the stack
                         println!("stack not empty: {:?}", self.stack);
-                        Err(RuntimeErrorWithReason(
-                            "Program terminating but stack is not empty",
-                        ))?;
+                        // Err(RuntimeErrorWithReason(
+                        //     "Program terminating but stack is not empty",
+                        // ))?;
                     }
                     println!("Return: {:?}", it);
                     break Ok(it);
@@ -296,9 +299,12 @@ impl<'a> Vm<'a> {
                 }
                 // control flow
                 JumpIfFalse => {
+                    // Always read the jump as it will update the ip past the Jump bytes
+                    // which we need if we dont jump so the next instruction to fetch
+                    // on true if the on true block
+                    let distance = self.read_jump().ok_or(RuntimeError)?;
                     if !self.pop_stack()?.is_truthy() {
-                        let jump = self.read_jump().ok_or(RuntimeError)?;
-                        self.jump(jump)
+                        self.jump(distance)
                     }
                 }
             }
@@ -340,9 +346,7 @@ impl<'a> Vm<'a> {
     }
 
     fn jump(&mut self, jump: Jump) {
-        // ip always points to the next instruction so adjust it to the current one
-        let ip_current = self.ip - 1;
-        self.ip = ip_current + jump.how_far as usize;
+        self.ip += jump.distance as usize;
     }
 }
 
@@ -574,7 +578,15 @@ mod tests {
     }
 
     #[test]
-    fn interpret_if_statement() {
+    fn interpret_if_statement_true() {
+        interpret_result(vec![(
+            "if (true){ var x = 3; var y = 5; return y * 2; } var x = 5; return x +2;",
+            10.0,
+        )]);
+    }
+
+    #[test]
+    fn interpret_if_statement_false() {
         interpret_result(vec![(
             "if (false){ var x = 3; var y = 5; return y; } var x = 5; return x +2;",
             7.0,
