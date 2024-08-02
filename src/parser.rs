@@ -305,6 +305,7 @@ impl<'a> Parser<'a> {
                 self.parse_expression(self.precedence(kind))?;
                 self.emit_op_codes(OpCode::Greater, OpCode::Not, line)
             }
+            TokenKind::And => self.parse_and_expression(),
             _ => Err(CompileError(ExpectedBinaryOperator))?,
         };
 
@@ -537,6 +538,27 @@ impl<'a> Parser<'a> {
         self.patch_jump(jump_to_continue);
 
         Ok(())
+    }
+
+    fn parse_and_expression(&mut self) -> Result<(), InterpretError> {
+        // lhs and rhs; continue | if lhs = false -> jump to continue, push false value on stack (as conditional jump popped it)
+        // lhs and rhs; continue | if lhs = true  -> pop true, evaluate rhs, stack has value of rhs
+
+        self.advance(); // consume and
+
+        // evaluate lhs
+        let jump_to_false = self.emit_jump(OpCode::JumpIfFalse)?;
+
+        // evaluate rhs
+        self.parse_expression(self.precedence(TokenKind::And))?;
+        let jump_to_continue = self.emit_jump(OpCode::Jump)?;
+
+        // false
+        self.patch_jump(jump_to_false)?;
+        self.emit_op_code(OpCode::False, self.line)?;
+
+        // continue
+        self.patch_jump(jump_to_continue)
     }
 }
 
@@ -797,6 +819,25 @@ mod tests {
       19        0 | Constant 10.0
       21        0 | Return
       22        0 | Return
+"#;
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn parse_and_expression() {
+        let it = Parser::parse(Tokenizer::new("false and true"));
+
+        assert!(it.is_ok());
+
+        let output = it.unwrap().disassemble_into_string("parse and expression");
+        let expected = r#"
+== parse and expression ==
+       0        0 | False
+       1        0 | If (false) jump to 8
+       4        0 | True
+       5        0 | Jump to 9
+       8        0 | False
+       9        0 | Return
 "#;
         assert_eq!(output, expected);
     }

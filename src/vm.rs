@@ -622,6 +622,16 @@ mod tests {
         )]);
     }
 
+    #[test]
+    fn interpret_and_expression() {
+        interpret_result(vec![
+            ("true and false", false),
+            ("true and true", true),
+            ("false and true", false),
+            ("false and false", false),
+        ])
+    }
+
     fn interpret_result<T>(cases: Vec<(&str, T)>)
     where
         Returned: From<T>,

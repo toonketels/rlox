@@ -168,7 +168,8 @@ impl Chunk {
             line,
             name,
             it.distance as usize + at + adjust_for_jump_byte_width + adjust_for_ip_points_to_next
-        ).unwrap();
+        )
+        .unwrap();
         at + 3
     }
 }
