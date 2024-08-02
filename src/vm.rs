@@ -307,6 +307,11 @@ impl<'a> Vm<'a> {
                         self.jump(distance)
                     }
                 }
+
+                Jump => {
+                    let distance = self.read_jump().ok_or(RuntimeError)?;
+                    self.jump(distance)
+                }
             }
         }
     }
@@ -589,6 +594,30 @@ mod tests {
     fn interpret_if_statement_false() {
         interpret_result(vec![(
             "if (false){ var x = 3; var y = 5; return y; } var x = 5; return x +2;",
+            7.0,
+        )]);
+    }
+
+    #[test]
+    fn interpret_if_else_statement_true() {
+        interpret_result(vec![(
+            "if (true){ var x = 3; var y = 5; } else { return 200; } var x = 5; return x +2;",
+            7.0,
+        )]);
+    }
+
+    #[test]
+    fn interpret_if_else_statement_false() {
+        interpret_result(vec![(
+            "if (false){ var x = 3; var y = 5; } else { return 200; } var x = 5; return x +2;",
+            200.0,
+        )]);
+    }
+
+    #[test]
+    fn interpret_if_else_statement_false_2() {
+        interpret_result(vec![(
+            "if (false){ var x = 3; var y = 5; } else { var y = 100; } var x = 5; return x +2;",
             7.0,
         )]);
     }

@@ -153,6 +153,25 @@ impl Chunk {
                 at + 3
             }
 
+            Jump => {
+                let it = self
+                    .read_jump(at + 1)
+                    .unwrap_or_else(|| panic!("Jump at index {:?} should exist", at + 1));
+                let adjust_for_jump_byte_width = 2;
+                let adjust_for_ip_points_to_next = 1;
+                writeln!(
+                    buffer,
+                    "{:8} {:8} | Jump to {:?}",
+                    at,
+                    line,
+                    it.distance as usize
+                        + at
+                        + adjust_for_jump_byte_width
+                        + adjust_for_ip_points_to_next
+                );
+                at + 3
+            }
+
             // statements
             Print => Self::simple_instruction("Print", buffer, at, line),
             Pop => Self::simple_instruction("Pop", buffer, at, line),

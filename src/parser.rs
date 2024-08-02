@@ -511,15 +511,30 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_if_statement(&mut self) -> Result<(), InterpretError> {
+        // if
         self.advance(); // consume if
 
+        // condition
         self.expect_advance(TokenKind::LeftParen, "Expect '(' after if")?;
         self.parse_expression(0);
         self.expect_advance(TokenKind::RightParen, "Expect ')' after if condition")?;
 
-        let then_jump = self.emit_jump(OpCode::JumpIfFalse)?;
+        // jump to else
+        let jump_to_else = self.emit_jump(OpCode::JumpIfFalse)?;
+
+        // then
         self.parse_statement()?;
-        self.patch_jump(then_jump)?;
+        let jump_to_continue = self.emit_jump(OpCode::Jump)?;
+
+        // else
+        self.patch_jump(jump_to_else);
+        if self.current()?.kind == TokenKind::Else {
+            self.advance(); // consume else
+            self.parse_statement();
+        }
+
+        // continue
+        self.patch_jump(jump_to_continue);
 
         Ok(())
     }
@@ -740,16 +755,48 @@ mod tests {
         let expected = r#"
 == parse if statement ==
        0        0 | True
-       1        0 | If (false) jump to 13
+       1        0 | If (false) jump to 16
        4        0 | Constant 3.0
        6        0 | Constant 5.0
        8        0 | Local var get index(1)
       10        0 | Return
       11        0 | Pop
       12        0 | Pop
-      13        0 | Constant 5.0
-      15        0 | Return
-      16        0 | Return
+      13        0 | Jump to 16
+      16        0 | Constant 5.0
+      18        0 | Return
+      19        0 | Return
+"#;
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn parse_if_else_statement() {
+        let it = Parser::parse(Tokenizer::new(
+            "if (true){ var x = 3; var y = 5; return y; } else { return 5; } return 10; ",
+        ));
+
+        assert!(it.is_ok());
+
+        let output = it
+            .unwrap()
+            .disassemble_into_string("parse if else statement");
+        let expected = r#"
+== parse if else statement ==
+       0        0 | True
+       1        0 | If (false) jump to 16
+       4        0 | Constant 3.0
+       6        0 | Constant 5.0
+       8        0 | Local var get index(1)
+      10        0 | Return
+      11        0 | Pop
+      12        0 | Pop
+      13        0 | Jump to 19
+      16        0 | Constant 5.0
+      18        0 | Return
+      19        0 | Constant 10.0
+      21        0 | Return
+      22        0 | Return
 "#;
         assert_eq!(output, expected);
     }
