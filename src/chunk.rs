@@ -20,6 +20,8 @@ impl Default for Strings {
     }
 }
 
+// How far to jump the instruction pointer?
+// Does not keep track if the jump is forward or backward, that is for the opcode to determine
 #[derive(Default)]
 pub struct Jump {
     pub distance: u16,
@@ -27,11 +29,25 @@ pub struct Jump {
 
 // How for in the code block jump
 impl Jump {
-    pub fn calculate(from: usize, to: usize) -> Result<Self, InterpretError> {
+    pub fn forward(from: usize, to: usize) -> Result<Self, InterpretError> {
         // from is address of the patch, contains the Jump
         // to is address of next code instruction
         let jump_bytes_width = 2; // To Jump after the opcode is 2 bytes wide
         let distance = to - from - jump_bytes_width;
+
+        match distance > u16::MAX as usize {
+            true => Err(InterpretError::JumpTooFar),
+            false => Ok(Jump {
+                distance: distance as u16,
+            }),
+        }
+    }
+    pub fn backward(from: usize, to: usize) -> Result<Self, InterpretError> {
+        // from is address of the patch, contains the Jump
+        // to is address of next code instruction
+        let jump_bytes_width = 2; // To Jump after the opcode is 2 bytes wide
+        let ip_correction = 1;
+        let distance = from + jump_bytes_width + ip_correction - to;
 
         match distance > u16::MAX as usize {
             true => Err(InterpretError::JumpTooFar),
@@ -120,9 +136,19 @@ impl Chunk {
     }
 
     pub fn patch_jump(&mut self, at: usize) -> Result<(), InterpretError> {
-        let (higher, lower) = Jump::calculate(at, self.code.len())?.to_bytes();
+        let (higher, lower) = Jump::forward(at, self.code.len())?.to_bytes();
         self.code.patch(at, higher);
         self.code.patch(at + 1, lower);
+        Ok(())
+    }
+
+    pub fn write_loop(&mut self, to: usize, line: usize) -> Result<(), InterpretError> {
+        let (higher, lower) = Jump::backward(self.code.len(), to)?.to_bytes();
+        self.write_byte(OpCode::Loop as Byte, line);
+
+        self.write_byte(higher, line);
+        self.write_byte(lower, line);
+
         Ok(())
     }
 

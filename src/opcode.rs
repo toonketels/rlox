@@ -192,6 +192,7 @@ pub enum OpCode {
     JumpIfFalse,
     JumpIfTrue,
     Jump,
+    Loop,
 
     // Statements
     Print,

@@ -137,6 +137,7 @@ impl Chunk {
             JumpIfFalse => self.jump_instruction("If (false) jump", buffer, at, line),
             JumpIfTrue => self.jump_instruction("If (true) jump", buffer, at, line),
             Jump => self.jump_instruction("Jump", buffer, at, line),
+            Loop => self.loop_instruction(buffer, at, line),
 
             // statements
             Print => Self::simple_instruction("Print", buffer, at, line),
@@ -169,6 +170,23 @@ impl Chunk {
             line,
             name,
             it.distance as usize + at + adjust_for_jump_byte_width + adjust_for_ip_points_to_next
+        )
+        .unwrap();
+        at + 3
+    }
+
+    fn loop_instruction<W: Write>(&self, buffer: &mut W, at: usize, line: usize) -> usize {
+        let it = self
+            .read_jump(at + 1)
+            .unwrap_or_else(|| panic!("Jump at index {:?} should exist", at + 1));
+        let adjust_for_jump_byte_width = 2;
+        let adjust_for_ip_points_to_next = 1;
+        writeln!(
+            buffer,
+            "{:8} {:8} | Loop back to {:?}",
+            at,
+            line,
+            at - it.distance as usize + adjust_for_jump_byte_width + adjust_for_ip_points_to_next
         )
         .unwrap();
         at + 3

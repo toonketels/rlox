@@ -304,7 +304,7 @@ impl<'a> Vm<'a> {
                     // on true if the on true block
                     let distance = self.read_jump().ok_or(RuntimeError)?;
                     if !self.pop_stack()?.is_truthy() {
-                        self.jump(distance)
+                        self.jump_forward(distance)
                     }
                 }
                 JumpIfTrue => {
@@ -313,13 +313,18 @@ impl<'a> Vm<'a> {
                     // on false if the on false block
                     let distance = self.read_jump().ok_or(RuntimeError)?;
                     if self.pop_stack()?.is_truthy() {
-                        self.jump(distance)
+                        self.jump_forward(distance)
                     }
                 }
 
                 Jump => {
                     let distance = self.read_jump().ok_or(RuntimeError)?;
-                    self.jump(distance)
+                    self.jump_forward(distance)
+                }
+
+                Loop => {
+                    let distance = self.read_jump().ok_or(RuntimeError)?;
+                    self.jump_backward(distance)
                 }
             }
         }
@@ -359,8 +364,12 @@ impl<'a> Vm<'a> {
         Ok(())
     }
 
-    fn jump(&mut self, jump: Jump) {
+    fn jump_forward(&mut self, jump: Jump) {
         self.ip += jump.distance as usize;
+    }
+
+    fn jump_backward(&mut self, jump: Jump) {
+        self.ip -= jump.distance as usize;
     }
 }
 
@@ -639,6 +648,24 @@ mod tests {
             ("false and true", false),
             ("false and false", false),
         ])
+    }
+
+    #[test]
+    fn interpret_while_loop() {
+        interpret_result(vec![(
+            "var x = 0; var y = 3; while (y > 0) { y = y - 1; x = x + 1; } return x;",
+            3.0,
+        )]);
+
+        interpret_result(vec![
+            ("var x = true; while (x) { x  = false; } return x;", false),
+            ("var x = true; while (x) { x  = !x; } return x;", false),
+        ]);
+
+        interpret_result(vec![(
+            "var x = \"hi\"; var y = 3; while (y > 0) { y = y - 1; x = x + \"hi\"; } return x;",
+            "hihihihi",
+        )])
     }
 
     #[test]

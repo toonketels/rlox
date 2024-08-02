@@ -396,6 +396,10 @@ impl<'a> Parser<'a> {
         self.chunk.patch_jump(offset)
     }
 
+    fn emit_loop(&mut self, loop_start: usize) -> Result<(), InterpretError> {
+        self.chunk.write_loop(loop_start, self.line)
+    }
+
     // declarations: statements that bind a new name (variable) to a value
     // If nothing find, starts parsing statements
     fn parse_declaration(&mut self) -> Result<(), InterpretError> {
@@ -412,6 +416,7 @@ impl<'a> Parser<'a> {
             TokenKind::Print => self.parse_print_statement(),
             TokenKind::LeftBrace => self.parse_block(),
             TokenKind::If => self.parse_if_statement(),
+            TokenKind::While => self.parse_while_statement(),
             // @TODO replace parse_expression by parse_expression_statement and no longer return value from interpret
             _ => self.parse_expression(0),
             // _ => self.parse_expression_statement(),
@@ -541,6 +546,29 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
+    fn parse_while_statement(&mut self) -> Result<(), InterpretError> {
+        // while
+        self.advance(); // consume while
+
+        let loop_start = self.mark_code();
+
+        // condition
+        self.expect_advance(TokenKind::LeftParen, "Expect '(' after while")?;
+        self.parse_expression(0);
+        self.expect_advance(TokenKind::RightParen, "Expect ')' after while condition")?;
+
+        // exit loop
+        let jump_to_exit = self.emit_jump(OpCode::JumpIfFalse)?;
+
+        // do it
+        self.parse_statement()?;
+        self.emit_loop(loop_start)?;
+
+        // exit
+        self.patch_jump(jump_to_exit);
+        Ok(())
+    }
+
     // @TODO consider not popping from stack for conditional jumps
     fn parse_and_expression(&mut self) -> Result<(), InterpretError> {
         // lhs and rhs; continue | if lhs = false -> jump to continue, push false value on stack (as conditional jump popped it)
@@ -582,6 +610,11 @@ impl<'a> Parser<'a> {
 
         // continue
         self.patch_jump(jump_to_continue)
+    }
+
+    // returns the next code
+    fn mark_code(&self) -> usize {
+        self.chunk.code.len()
     }
 }
 
@@ -878,6 +911,63 @@ mod tests {
        5        0 | Jump to 9
        8        0 | True
        9        0 | Return
+"#;
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn parse_while_statement() {
+        let it = Parser::parse(Tokenizer::new(
+            "var z = 10; while (true) { var x = 3; } return 5;",
+        ));
+
+        let output = it.unwrap().disassemble_into_string("parse while statement");
+        let expected = r#"
+== parse while statement ==
+       0        0 | Constant 10.0
+       2        0 | Global define "z"
+       4        0 | True
+       5        0 | If (false) jump to 14
+       8        0 | Constant 3.0
+      10        0 | Pop
+      11        0 | Loop back to 4
+      14        0 | Constant 5.0
+      16        0 | Return
+      17        0 | Return
+"#;
+        assert_eq!(output, expected);
+    }
+    #[test]
+    fn parse_while_statement_2() {
+        let it = Parser::parse(Tokenizer::new(
+            "var x = 0; var y = 3; while (y > 0) { y = y - 1; x = x + 1; } return x;",
+        ));
+
+        let output = it
+            .unwrap()
+            .disassemble_into_string("parse while statement 2");
+        let expected = r#"
+== parse while statement 2 ==
+       0        0 | Constant 0.0
+       2        0 | Global define "x"
+       4        0 | Constant 3.0
+       6        0 | Global define "y"
+       8        0 | Global get "y"
+      10        0 | Constant 0.0
+      12        0 | Greater
+      13        0 | If (false) jump to 33
+      16        0 | Global get "y"
+      18        0 | Constant 1.0
+      20        0 | Subtract
+      21        0 | Global set "y"
+      23        0 | Global get "x"
+      25        0 | Constant 1.0
+      27        0 | Add
+      28        0 | Global set "x"
+      30        0 | Loop back to 8
+      33        0 | Global get "x"
+      35        0 | Return
+      36        0 | Return
 "#;
         assert_eq!(output, expected);
     }
