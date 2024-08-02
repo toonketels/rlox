@@ -385,6 +385,15 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
+    // Returns the code address to patch
+    fn emit_jump(&mut self, op_code: OpCode) -> Result<usize, InterpretError> {
+        self.chunk.write_jump(op_code, self.line)
+    }
+
+    fn patch_jump(&mut self, offset: usize) -> Result<(), InterpretError> {
+        self.chunk.patch_jump(offset)
+    }
+
     // declarations: statements that bind a new name (variable) to a value
     // If nothing find, starts parsing statements
     fn parse_declaration(&mut self) -> Result<(), InterpretError> {
@@ -400,6 +409,7 @@ impl<'a> Parser<'a> {
         match self.current()?.kind {
             TokenKind::Print => self.parse_print_statement(),
             TokenKind::LeftBrace => self.parse_block(),
+            TokenKind::If => self.parse_if_statement(),
             // @TODO replace parse_expression by parse_expression_statement and no longer return value from interpret
             _ => self.parse_expression(0),
             // _ => self.parse_expression_statement(),
@@ -498,6 +508,20 @@ impl<'a> Parser<'a> {
             "Expected ';' after variable declaration",
         )?;
         self.emit_op_code(Return, self.line)
+    }
+
+    fn parse_if_statement(&mut self) -> Result<(), InterpretError> {
+        self.advance(); // consume if
+
+        self.expect_advance(TokenKind::LeftParen, "Expect '(' after if")?;
+        self.parse_expression(0);
+        self.expect_advance(TokenKind::RightParen, "Expect ')' after if condition")?;
+
+        let then_jump = self.emit_jump(OpCode::JumpIfFalse)?;
+        self.parse_statement()?;
+        self.patch_jump(then_jump)?;
+
+        Ok(())
     }
 }
 
@@ -662,9 +686,9 @@ mod tests {
 
         let output = it
             .unwrap()
-            .disassemble_into_string("parse var declaration 2");
+            .disassemble_into_string("parse var declaration 3");
         let expected = r#"
-== parse var declaration 2 ==
+== parse var declaration 3 ==
        0        0 | Nil
        1        0 | Global define "it"
        3        0 | Constant 3.0
@@ -674,6 +698,58 @@ mod tests {
       10        0 | Global get "it"
       12        0 | Print
       13        0 | Return
+"#;
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn parse_var_declaration_4() {
+        let it = Parser::parse(Tokenizer::new(
+            "{ var x = 3; var y = 5; return y; } return 5;",
+        ));
+
+        assert!(it.is_ok());
+
+        let output = it
+            .unwrap()
+            .disassemble_into_string("parse var declaration 4");
+        let expected = r#"
+== parse var declaration 4 ==
+       0        0 | Constant 3.0
+       2        0 | Constant 5.0
+       4        0 | Local var get index(1)
+       6        0 | Return
+       7        0 | Pop
+       8        0 | Pop
+       9        0 | Constant 5.0
+      11        0 | Return
+      12        0 | Return
+"#;
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn parse_if_statement() {
+        let it = Parser::parse(Tokenizer::new(
+            "if (true){ var x = 3; var y = 5; return y; } return 5;",
+        ));
+
+        assert!(it.is_ok());
+
+        let output = it.unwrap().disassemble_into_string("parse if statement");
+        let expected = r#"
+== parse if statement ==
+       0        0 | True
+       1        0 | If (false) jump to 13
+       4        0 | Constant 3.0
+       6        0 | Constant 5.0
+       8        0 | Local var get index(1)
+      10        0 | Return
+      11        0 | Pop
+      12        0 | Pop
+      13        0 | Constant 5.0
+      15        0 | Return
+      16        0 | Return
 "#;
         assert_eq!(output, expected);
     }

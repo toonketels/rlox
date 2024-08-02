@@ -1,4 +1,4 @@
-use crate::chunk::Chunk;
+use crate::chunk::{Chunk, Jump};
 use crate::heap::rc::RcHeap as Heap;
 use crate::opcode::Value::{Bool, Number, Object};
 use crate::opcode::{Byte, Obj, OpCode, Returned, Value};
@@ -42,6 +42,7 @@ pub enum InterpretError {
     RuntimeError,
     StackUnderflowError,
     RuntimeErrorWithReason(&'static str),
+    JumpTooFar,
     Io(std::io::Error),
 }
 
@@ -60,6 +61,7 @@ impl Display for InterpretError {
             InterpretError::RuntimeErrorWithReason(reason) => {
                 write!(f, "runtime error: {}", reason)
             }
+            InterpretError::JumpTooFar => write!(f, "jump too far"),
             InterpretError::LoadError => write!(f, "load error"),
             InterpretError::Io(io) => write!(f, "Io error {}", io),
         }
@@ -97,6 +99,10 @@ impl<'a> Vm<'a> {
 
     fn read_byte(&mut self) -> Option<Byte> {
         self.chunk.read_byte(self.advance())
+    }
+
+    fn read_jump(&mut self) -> Option<Jump> {
+        self.chunk.read_jump(self.advance())
     }
 
     fn read_constant(&mut self) -> Result<Value, InterpretError> {
@@ -288,6 +294,13 @@ impl<'a> Vm<'a> {
                 Pop => {
                     self.pop_stack()?;
                 }
+                // control flow
+                JumpIfFalse => {
+                    if !self.pop_stack()?.is_truthy() {
+                        let jump = self.read_jump().ok_or(RuntimeError)?;
+                        self.jump(jump)
+                    }
+                }
             }
         }
     }
@@ -324,6 +337,12 @@ impl<'a> Vm<'a> {
         let it = self.pop_stack()?;
         println!("PRINTED: {:?}", &it);
         Ok(())
+    }
+
+    fn jump(&mut self, jump: Jump) {
+        // ip always points to the next instruction so adjust it to the current one
+        let ip_current = self.ip - 1;
+        self.ip = ip_current + jump.how_far as usize;
     }
 }
 
@@ -551,6 +570,14 @@ mod tests {
         interpret_result(vec![(
             "var z; { var x; var y; x = 10; y = 20; z = y; } return;",
             Nil,
+        )]);
+    }
+
+    #[test]
+    fn interpret_if_statement() {
+        interpret_result(vec![(
+            "if (false){ var x = 3; var y = 5; return y; } var x = 5; return x +2;",
+            7.0,
         )]);
     }
 

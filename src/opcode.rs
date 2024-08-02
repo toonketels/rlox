@@ -188,10 +188,14 @@ pub enum OpCode {
     SetLocal,
     GetLocal,
 
+    // control flow
+    JumpIfFalse,
+
+    // Statements
     Print,
     Pop, // pops a value from the stack to throw it away
 
-    Return,
+    Return, // needs to be last
 }
 
 impl TryFrom<Byte> for OpCode {

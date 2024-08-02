@@ -114,24 +114,40 @@ impl Chunk {
                 at + 2
             }
             GetLocal => {
+                let index = self.read_byte(at + 1).unwrap();
+
                 writeln!(
                     buffer,
                     "{:8} {:8} | Local var get index({:?})",
-                    at,
-                    line,
-                    at + 1
+                    at, line, index
                 );
                 at + 2
             }
             SetLocal => {
+                let index = self.read_byte(at + 1).unwrap();
                 writeln!(
                     buffer,
                     "{:8} {:8} | Local var set index({:?})",
-                    at,
-                    line,
-                    at + 1
+                    at, line, index
                 );
                 at + 2
+            }
+
+            // control flow
+            JumpIfFalse => {
+                let it = self
+                    .read_jump(at + 1)
+                    .unwrap_or_else(|| panic!("Jump at index {:?} should exist", at + 1));
+                let jump_byte_width = 2;
+                let adjust_for_ip_points_to_next = 1;
+                writeln!(
+                    buffer,
+                    "{:8} {:8} | If (false) jump to {:?}",
+                    at,
+                    line,
+                    it.how_far as usize + at + jump_byte_width - adjust_for_ip_points_to_next
+                );
+                at + 3
             }
 
             // statements

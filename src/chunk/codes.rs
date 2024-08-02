@@ -19,4 +19,13 @@ impl Codes {
         self.0.push(byte);
         self.0.len() - 1
     }
+
+    pub fn patch(&mut self, at: usize, byte: Byte) -> usize {
+        self.0[at] = byte;
+        at
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
 }

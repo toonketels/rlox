@@ -94,6 +94,10 @@ impl Compiler {
         false
     }
 
+    // The trick here is that our local vars mirror the stack so the index
+    // corresponds one on one the index on the stack
+    //
+    // Might no longer be true once we start pushing complete stack frames
     pub fn resolve_local_variable(&self, name: &str) -> LocalVarResolution {
         // Walk from the back because we allow shadowing so we need to variable from the highest scope first
         for (i, v) in self.locals.iter().enumerate().rev() {

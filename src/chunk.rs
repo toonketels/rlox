@@ -5,6 +5,7 @@ mod lines;
 
 use crate::opcode::OpCode::Constant;
 use crate::opcode::{Byte, OpCode, Value};
+use crate::vm::InterpretError;
 use codes::Codes;
 use constants::Constants;
 use lines::Lines;
@@ -16,6 +17,38 @@ pub struct Strings(Vec<String>);
 impl Default for Strings {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[derive(Default)]
+pub struct Jump {
+    pub how_far: u16,
+}
+
+// How for in the code block jump
+impl Jump {
+    pub fn calculate(from: usize, to: usize) -> Result<Self, InterpretError> {
+        // to is 13, from is 2
+        let how_far = to - from;
+
+        match how_far > u16::MAX as usize {
+            true => Err(InterpretError::JumpTooFar),
+            false => Ok(Jump {
+                how_far: how_far as u16,
+            }),
+        }
+    }
+
+    pub fn to_bytes(&self) -> (Byte, Byte) {
+        let lower = self.how_far as u8;
+        let higher = (self.how_far >> 8) as u8;
+        (higher, lower)
+    }
+
+    pub fn from_bytes(higher: Byte, lower: Byte) -> Self {
+        let how_far = (higher as u16) << 8 | (lower as u16);
+
+        Self { how_far }
     }
 }
 
@@ -71,6 +104,24 @@ impl Chunk {
 
     pub fn write_code(&mut self, op_code: OpCode, line: usize) {
         self.write_byte(op_code as Byte, line)
+    }
+
+    // Returns the address to patch
+    pub fn write_jump(&mut self, op_code: OpCode, line: usize) -> Result<usize, InterpretError> {
+        let (higher, lower) = Jump::default().to_bytes();
+        self.write_byte(op_code as Byte, line);
+
+        self.write_byte(higher, line);
+        self.write_byte(lower, line);
+
+        Ok(self.code.len() - 2)
+    }
+
+    pub fn patch_jump(&mut self, at: usize) -> Result<(), InterpretError> {
+        let (higher, lower) = Jump::calculate(at, self.code.len())?.to_bytes();
+        self.code.patch(at, higher);
+        self.code.patch(at + 1, lower);
+        Ok(())
     }
 
     pub fn write_constant(&mut self, value: Value, line: usize) {
@@ -139,6 +190,12 @@ impl Chunk {
 
     pub fn read_byte(&self, index: usize) -> Option<Byte> {
         self.code.get(index)
+    }
+
+    pub fn read_jump(&self, index: usize) -> Option<Jump> {
+        let higher = self.read_byte(index)?;
+        let lower = self.read_byte(index + 1)?;
+        Some(Jump::from_bytes(higher, lower))
     }
 
     pub fn read_constant(&self, index: usize) -> Option<Value> {
