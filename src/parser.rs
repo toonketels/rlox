@@ -5,8 +5,8 @@ use crate::opcode::Value::Number;
 use crate::opcode::{OpCode, Value};
 use crate::tokenizer::{Token, TokenKind, Tokenizer};
 use crate::vm::CompilationErrorReason::{
-    ExpectedBinaryOperator, ExpectedDifferentToken, ExpectedPrefix, ExpectedRightParen,
-    NotEnoughTokens, ParseFloatError, TooMayTokens,
+    ExpectedBinaryOperator, ExpectedPrefix, ExpectedRightParen, NotEnoughTokens, ParseFloatError,
+    TooMayTokens,
 };
 use crate::vm::InterpretError;
 use crate::vm::InterpretError::{CompileError, RuntimeErrorWithReason};
@@ -56,10 +56,10 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn expect(&self, expected: TokenKind) -> Result<(), InterpretError> {
+    fn expect(&self, expected: TokenKind, error: &'static str) -> Result<(), InterpretError> {
         match self.current()?.kind {
             it if it == expected => Ok(()),
-            received => Err(CompileError(ExpectedDifferentToken { expected, received })),
+            received => Err(RuntimeErrorWithReason(error)),
         }
     }
 
@@ -417,6 +417,7 @@ impl<'a> Parser<'a> {
             TokenKind::LeftBrace => self.parse_block(),
             TokenKind::If => self.parse_if_statement(),
             TokenKind::While => self.parse_while_statement(),
+            TokenKind::For => self.parse_for_loop(),
             // @TODO replace parse_expression by parse_expression_statement and no longer return value from interpret
             _ => self.parse_expression(0),
             // _ => self.parse_expression_statement(),
@@ -615,6 +616,66 @@ impl<'a> Parser<'a> {
     // returns the next code
     fn mark_code(&self) -> usize {
         self.chunk.code.len()
+    }
+
+    fn parse_for_loop(&mut self) -> Result<(), InterpretError> {
+        // for (initializer; condition; modifier) { block; } exit
+
+        self.compiler.begin_scope()?;
+
+        // for
+        self.advance(); // consume 'for'
+
+        // (
+        self.expect_advance(TokenKind::LeftParen, "Expect '(' after for")?;
+
+        // initializer
+        match self.current()?.kind {
+            TokenKind::Semicolon => self.expect_advance(
+                TokenKind::Semicolon,
+                "Expect ';' after initializer in for loop",
+            )?, // no initializer, just skip to condition
+            TokenKind::Var => self.parse_var_declaration()?, // consumes up to first ';' inclusive
+            _ => self.parse_expression_statement()?,         // consumes up to first ';' inclusive
+        }
+
+        // condition
+        let to_condition = self.mark_code();
+        match self.current()?.kind {
+            TokenKind::Semicolon => (), // no conditional, just skip to modifier
+            _ => self.parse_expression(0)?,
+        }
+        self.expect_advance(
+            TokenKind::Semicolon,
+            "Expect ';' after condition in for loop",
+        )?;
+        let to_block = self.emit_jump(OpCode::JumpIfTrue)?;
+        // If we get here, the condition was false and we exit
+        let to_exit = self.emit_jump(OpCode::Jump)?;
+
+        // modifier
+        let to_modify = self.mark_code();
+        match self.current()?.kind {
+            TokenKind::RightParen => (), // no modifier, just skip to body
+            _ => self.parse_expression(0)?,
+        }
+        self.emit_loop(to_condition)?;
+
+        // )
+        self.expect_advance(TokenKind::RightParen, "Expect ')' after for")?;
+
+        // block
+        self.patch_jump(to_block)?;
+        self.expect(TokenKind::LeftBrace, "Expect '{' in for loop")?;
+        self.parse_statement()?;
+        self.emit_loop(to_modify)?;
+
+        // exit
+        self.patch_jump(to_exit)?;
+
+        self.compiler.end_scope()?;
+
+        Ok(())
     }
 }
 
@@ -968,6 +1029,64 @@ mod tests {
       33        0 | Global get "x"
       35        0 | Return
       36        0 | Return
+"#;
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn parse_for_loop_1() {
+        let it = Parser::parse(Tokenizer::new(
+            "var x = 0; for (var i = 0; i < 10; i = i + 1;) { x = x + 1; } print x;",
+        ));
+
+        let output = it.unwrap().disassemble_into_string("parse for loop 1");
+        let expected = r#"
+== parse for loop 1 ==
+       0        0 | Constant 0.0
+       2        0 | Global define "x"
+       4        0 | Constant 0.0
+       6        0 | Local var get index(0)
+       8        0 | Constant 10.0
+      10        0 | Less
+      11        0 | If (true) jump to 27
+      14        0 | Jump to 37
+      17        0 | Local var get index(0)
+      19        0 | Constant 1.0
+      21        0 | Add
+      22        0 | Local var set index(0)
+      24        0 | Loop back to 6
+      27        0 | Global get "x"
+      29        0 | Constant 1.0
+      31        0 | Add
+      32        0 | Global set "x"
+      34        0 | Loop back to 17
+      37        0 | Global get "x"
+      39        0 | Print
+      40        0 | Return
+"#;
+        assert_eq!(output, expected);
+    }
+
+    #[test]
+    fn parse_for_loop_2() {
+        let it = Parser::parse(Tokenizer::new(
+            "var x = 10; for (;;) { print x; } return x;",
+        ));
+
+        let output = it.unwrap().disassemble_into_string("parse for loop 2");
+        let expected = r#"
+== parse for loop 2 ==
+       0        0 | Constant 10.0
+       2        0 | Global define "x"
+       4        0 | If (true) jump to 13
+       7        0 | Jump to 19
+      10        0 | Loop back to 4
+      13        0 | Global get "x"
+      15        0 | Print
+      16        0 | Loop back to 10
+      19        0 | Global get "x"
+      21        0 | Return
+      22        0 | Return
 "#;
         assert_eq!(output, expected);
     }

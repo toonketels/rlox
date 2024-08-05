@@ -678,6 +678,17 @@ mod tests {
         ])
     }
 
+    #[test]
+    fn interpret_for_loop() {
+        interpret_result(vec![
+            (
+                "var x = 0; for (var i = 0; i < 10; i = i + 1;) { x = x + 1; } return x;",
+                10.0,
+            ),
+            ("var x = 0; for (; x < 10;) { x = x + 1; } return x;", 10.0),
+        ])
+    }
+
     fn interpret_result<T>(cases: Vec<(&str, T)>)
     where
         Returned: From<T>,
