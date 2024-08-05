@@ -132,7 +132,8 @@ impl<'a> Parser<'a> {
     }
 
     fn end(&mut self) -> Result<(), InterpretError> {
-        self.emit_return(self.line)?;
+        // We no longer automatically emit return
+        // self.emit_return(self.line)?;
         Ok(())
     }
 
@@ -178,10 +179,6 @@ impl<'a> Parser<'a> {
             TokenKind::Equal if can_assign => {
                 self.advance();
                 self.parse_expression(0)?;
-                self.expect_advance(
-                    TokenKind::Semicolon,
-                    "Expected ';' after variable declaration",
-                )?;
                 match is_local_var {
                     LocalVarResolution::FoundAt(at) => self.emit_set_local_var(at, line)?,
                     LocalVarResolution::NotFound => self.emit_set_global_var(name, line)?,
@@ -418,9 +415,7 @@ impl<'a> Parser<'a> {
             TokenKind::While => self.parse_while_statement(),
             TokenKind::For => self.parse_for_loop_statement(),
             TokenKind::Return => self.parse_return_statement(),
-            // @TODO replace parse_expression by parse_expression_statement and no longer return value from interpret
-            _ => self.parse_expression(0),
-            // _ => self.parse_expression_statement(),
+            _ => self.parse_expression_statement(),
         }
     }
 
@@ -434,7 +429,7 @@ impl<'a> Parser<'a> {
     // Evaluates the expression and throws away the result
     fn parse_expression_statement(&mut self) -> Result<(), InterpretError> {
         self.parse_expression(0);
-        self.expect_advance(TokenKind::Semicolon, "Expected ';' after value");
+        self.expect_advance(TokenKind::Semicolon, "Expected ';' after value")?;
         self.emit_op_code(OpCode::Pop, self.line)
     }
 
@@ -531,11 +526,13 @@ impl<'a> Parser<'a> {
         let jump_to_else = self.emit_jump(OpCode::JumpIfFalse)?;
 
         // then
+        self.emit_op_code(OpCode::Pop, self.line)?; // take the condition from the stack
         self.parse_statement()?;
         let jump_to_continue = self.emit_jump(OpCode::Jump)?;
 
         // else
         self.patch_jump(jump_to_else);
+        self.emit_op_code(OpCode::Pop, self.line)?; // take the condition from the stack
         if self.current()?.kind == TokenKind::Else {
             self.advance(); // consume else
             self.parse_statement();
@@ -562,52 +559,46 @@ impl<'a> Parser<'a> {
         let jump_to_exit = self.emit_jump(OpCode::JumpIfFalse)?;
 
         // do it
+        self.emit_op_code(OpCode::Pop, self.line)?; // pop condition of stack
         self.parse_statement()?;
         self.emit_loop(loop_start)?;
 
         // exit
         self.patch_jump(jump_to_exit);
+        self.emit_op_code(OpCode::Pop, self.line)?; // pop condition of stack
         Ok(())
     }
 
     // @TODO consider not popping from stack for conditional jumps
     fn parse_and_expression(&mut self) -> Result<(), InterpretError> {
-        // lhs and rhs; continue | if lhs = false -> jump to continue, push false value on stack (as conditional jump popped it)
-        // lhs and rhs; continue | if lhs = true  -> pop true, evaluate rhs, stack has value of rhs
+        // lhs and rhs; continue | if lhs = false -> jump to continue, false value is still on stack
+        // lhs and rhs; continue | if lhs = true  -> fallthrough to rhs, pop lhs from stack, evaluate
 
         self.advance(); // consume and
 
         // evaluate lhs
-        let jump_to_false = self.emit_jump(OpCode::JumpIfFalse)?;
+        let jump_to_continue = self.emit_jump(OpCode::JumpIfFalse)?;
 
         // evaluate rhs
+        self.emit_op_code(OpCode::Pop, self.line)?;
         self.parse_expression(self.precedence(TokenKind::And))?;
-        let jump_to_continue = self.emit_jump(OpCode::Jump)?;
-
-        // false
-        self.patch_jump(jump_to_false)?;
-        self.emit_op_code(OpCode::False, self.line)?;
 
         // continue
         self.patch_jump(jump_to_continue)
     }
 
     fn parse_or_expression(&mut self) -> Result<(), InterpretError> {
-        // lhs or rhs; continue | if lhs = true -> jump to continue, push true value on stack (as conditional jump popped it)
-        // lhs or rhs; continue | if lhs = false  -> pop true, evaluate rhs, stack has value of rhs
+        // lhs or rhs; continue | if lhs = false -> falls trough rhs, it pops lhs off the stack (false), evaluate expressiion (push to stack)
+        // lhs or rhs; continue | if lhs = true  -> jump to continue, true is still on the stack
 
         self.advance(); // consume and
 
         // evaluate lhs
-        let jump_to_true = self.emit_jump(OpCode::JumpIfTrue)?;
+        let jump_to_continue = self.emit_jump(OpCode::JumpIfTrue)?;
 
         // evaluate rhs
+        self.emit_op_code(OpCode::Pop, self.line)?; // pop the lhs from the stack
         self.parse_expression(self.precedence(TokenKind::Or))?;
-        let jump_to_continue = self.emit_jump(OpCode::Jump)?;
-
-        // false
-        self.patch_jump(jump_to_true)?;
-        self.emit_op_code(OpCode::True, self.line)?;
 
         // continue
         self.patch_jump(jump_to_continue)
@@ -641,23 +632,30 @@ impl<'a> Parser<'a> {
 
         // condition
         let to_condition = self.mark_code();
+        let mut to_exit = None;
         match self.current()?.kind {
             TokenKind::Semicolon => (), // no conditional, just skip to modifier
-            _ => self.parse_expression(0)?,
+            _ => {
+                self.parse_expression(0)?;
+                to_exit = Some(self.emit_jump(OpCode::JumpIfFalse)?); // jump out of loop if false
+                self.emit_op_code(OpCode::Pop, self.line)?; // pop condition from stack
+            }
         }
         self.expect_advance(
             TokenKind::Semicolon,
             "Expect ';' after condition in for loop",
         )?;
-        let to_block = self.emit_jump(OpCode::JumpIfTrue)?;
-        // If we get here, the condition was false and we exit
-        let to_exit = self.emit_jump(OpCode::Jump)?;
+        // If we get here, the condition was true (or no condition at all) and we evaluate the block
+        let to_block = self.emit_jump(OpCode::Jump)?;
 
         // modifier
         let to_modify = self.mark_code();
         match self.current()?.kind {
             TokenKind::RightParen => (), // no modifier, just skip to body
-            _ => self.parse_expression(0)?,
+            _ => {
+                self.parse_expression(0)?;
+                self.emit_op_code(OpCode::Pop, self.line)?;
+            }
         }
         self.emit_loop(to_condition)?;
 
@@ -671,7 +669,10 @@ impl<'a> Parser<'a> {
         self.emit_loop(to_modify)?;
 
         // exit
-        self.patch_jump(to_exit)?;
+        if let Some(offset) = to_exit {
+            self.patch_jump(offset)?;
+            self.emit_op_code(OpCode::Pop, self.line);
+        }
 
         self.compiler.end_scope()?;
 
@@ -690,9 +691,7 @@ mod tests {
 
     #[test]
     fn parse_1() {
-        let it = Parser::parse(Tokenizer::new("10 + 30"));
-
-        assert!(it.is_ok());
+        let it = Parser::parse(Tokenizer::new("return 10 + 30;"));
 
         let output = it.unwrap().disassemble_into_string("parse 1");
         let expected = r#"
@@ -707,9 +706,7 @@ mod tests {
 
     #[test]
     fn parse_2() {
-        let it = Parser::parse(Tokenizer::new("10 + 30 * 40"));
-
-        assert!(it.is_ok());
+        let it = Parser::parse(Tokenizer::new("return 10 + 30 * 40;"));
 
         let output = it.unwrap().disassemble_into_string("parse 2");
         let expected = r#"
@@ -726,7 +723,7 @@ mod tests {
 
     #[test]
     fn parse_3() {
-        let it = Parser::parse(Tokenizer::new("(10 + 30) * 40"));
+        let it = Parser::parse(Tokenizer::new("return (10 + 30) * 40;"));
 
         assert!(it.is_ok());
 
@@ -745,7 +742,7 @@ mod tests {
 
     #[test]
     fn parse_4() {
-        let it = Parser::parse(Tokenizer::new("(10 + -30) * 40"));
+        let it = Parser::parse(Tokenizer::new("return (10 + -30) * 40;"));
 
         assert!(it.is_ok());
 
@@ -765,9 +762,7 @@ mod tests {
 
     #[test]
     fn parse_5() {
-        let it = Parser::parse(Tokenizer::new("\"hello world\""));
-
-        assert!(it.is_ok());
+        let it = Parser::parse(Tokenizer::new("return \"hello world\";"));
 
         let output = it.unwrap().disassemble_into_string("parse 5");
         let expected = r#"
@@ -782,14 +777,11 @@ mod tests {
     fn parse_print_statement() {
         let it = Parser::parse(Tokenizer::new("print \"hello world\";"));
 
-        assert!(it.is_ok());
-
         let output = it.unwrap().disassemble_into_string("parse print statement");
         let expected = r#"
 == parse print statement ==
        0        0 | String "hello world"
        2        0 | Print
-       3        0 | Return
 "#;
         assert_eq!(output, expected);
     }
@@ -797,8 +789,6 @@ mod tests {
     #[test]
     fn parse_var_declaration_1() {
         let it = Parser::parse(Tokenizer::new("var it = 5 + 3;"));
-
-        assert!(it.is_ok());
 
         let output = it
             .unwrap()
@@ -809,7 +799,6 @@ mod tests {
        2        0 | Constant 3.0
        4        0 | Add
        5        0 | Global define "it"
-       7        0 | Return
 "#;
         assert_eq!(output, expected);
     }
@@ -818,8 +807,6 @@ mod tests {
     fn parse_var_declaration_2() {
         let it = Parser::parse(Tokenizer::new("var it = hello;"));
 
-        assert!(it.is_ok());
-
         let output = it
             .unwrap()
             .disassemble_into_string("parse var declaration 2");
@@ -827,7 +814,6 @@ mod tests {
 == parse var declaration 2 ==
        0        0 | Global get "hello"
        2        0 | Global define "it"
-       4        0 | Return
 "#;
         assert_eq!(output, expected);
     }
@@ -835,8 +821,6 @@ mod tests {
     #[test]
     fn parse_var_declaration_3() {
         let it = Parser::parse(Tokenizer::new("var it; it = 3 + 5; print it;"));
-
-        assert!(it.is_ok());
 
         let output = it
             .unwrap()
@@ -849,9 +833,9 @@ mod tests {
        5        0 | Constant 5.0
        7        0 | Add
        8        0 | Global set "it"
-      10        0 | Global get "it"
-      12        0 | Print
-      13        0 | Return
+      10        0 | Pop
+      11        0 | Global get "it"
+      13        0 | Print
 "#;
         assert_eq!(output, expected);
     }
@@ -861,8 +845,6 @@ mod tests {
         let it = Parser::parse(Tokenizer::new(
             "{ var x = 3; var y = 5; return y; } return 5;",
         ));
-
-        assert!(it.is_ok());
 
         let output = it
             .unwrap()
@@ -877,7 +859,6 @@ mod tests {
        8        0 | Pop
        9        0 | Constant 5.0
       11        0 | Return
-      12        0 | Return
 "#;
         assert_eq!(output, expected);
     }
@@ -888,23 +869,22 @@ mod tests {
             "if (true){ var x = 3; var y = 5; return y; } return 5;",
         ));
 
-        assert!(it.is_ok());
-
         let output = it.unwrap().disassemble_into_string("parse if statement");
         let expected = r#"
 == parse if statement ==
        0        0 | True
-       1        0 | If (false) jump to 16
-       4        0 | Constant 3.0
-       6        0 | Constant 5.0
-       8        0 | Local var get index(1)
-      10        0 | Return
-      11        0 | Pop
+       1        0 | If (false) jump to 17
+       4        0 | Pop
+       5        0 | Constant 3.0
+       7        0 | Constant 5.0
+       9        0 | Local var get index(1)
+      11        0 | Return
       12        0 | Pop
-      13        0 | Jump to 16
-      16        0 | Constant 5.0
-      18        0 | Return
-      19        0 | Return
+      13        0 | Pop
+      14        0 | Jump to 18
+      17        0 | Pop
+      18        0 | Constant 5.0
+      20        0 | Returng
 "#;
         assert_eq!(output, expected);
     }
@@ -915,63 +895,58 @@ mod tests {
             "if (true){ var x = 3; var y = 5; return y; } else { return 5; } return 10; ",
         ));
 
-        assert!(it.is_ok());
-
         let output = it
             .unwrap()
             .disassemble_into_string("parse if else statement");
         let expected = r#"
 == parse if else statement ==
        0        0 | True
-       1        0 | If (false) jump to 16
-       4        0 | Constant 3.0
-       6        0 | Constant 5.0
-       8        0 | Local var get index(1)
-      10        0 | Return
-      11        0 | Pop
+       1        0 | If (false) jump to 17
+       4        0 | Pop
+       5        0 | Constant 3.0
+       7        0 | Constant 5.0
+       9        0 | Local var get index(1)
+      11        0 | Return
       12        0 | Pop
-      13        0 | Jump to 19
-      16        0 | Constant 5.0
-      18        0 | Return
-      19        0 | Constant 10.0
-      21        0 | Return
-      22        0 | Return
+      13        0 | Pop
+      14        0 | Jump to 21
+      17        0 | Pop
+      18        0 | Constant 5.0
+      20        0 | Return
+      21        0 | Constant 10.0
+      23        0 | Return
 "#;
         assert_eq!(output, expected);
     }
 
     #[test]
     fn parse_and_expression() {
-        let it = Parser::parse(Tokenizer::new("false and true"));
-
-        assert!(it.is_ok());
+        let it = Parser::parse(Tokenizer::new("return false and true;"));
 
         let output = it.unwrap().disassemble_into_string("parse and expression");
         let expected = r#"
 == parse and expression ==
        0        0 | False
-       1        0 | If (false) jump to 8
-       4        0 | True
-       5        0 | Jump to 9
-       8        0 | False
-       9        0 | Return
+       1        0 | If (false) jump to 6
+       4        0 | Pop
+       5        0 | True
+       6        0 | Return
 "#;
         assert_eq!(output, expected);
     }
 
     #[test]
     fn parse_or_expression() {
-        let it = Parser::parse(Tokenizer::new("false or true"));
+        let it = Parser::parse(Tokenizer::new("return false or true;"));
 
         let output = it.unwrap().disassemble_into_string("parse or expression");
         let expected = r#"
 == parse or expression ==
        0        0 | False
-       1        0 | If (true) jump to 8
-       4        0 | True
-       5        0 | Jump to 9
-       8        0 | True
-       9        0 | Return
+       1        0 | If (true) jump to 6
+       4        0 | Pop
+       5        0 | True
+       6        0 | Return
 "#;
         assert_eq!(output, expected);
     }
@@ -988,13 +963,14 @@ mod tests {
        0        0 | Constant 10.0
        2        0 | Global define "z"
        4        0 | True
-       5        0 | If (false) jump to 14
-       8        0 | Constant 3.0
-      10        0 | Pop
-      11        0 | Loop back to 4
-      14        0 | Constant 5.0
-      16        0 | Return
-      17        0 | Return
+       5        0 | If (false) jump to 15
+       8        0 | Pop
+       9        0 | Constant 3.0
+      11        0 | Pop
+      12        0 | Loop back to 4
+      15        0 | Pop
+      16        0 | Constant 5.0
+      18        0 | Return
 "#;
         assert_eq!(output, expected);
     }
@@ -1016,19 +992,22 @@ mod tests {
        8        0 | Global get "y"
       10        0 | Constant 0.0
       12        0 | Greater
-      13        0 | If (false) jump to 33
-      16        0 | Global get "y"
-      18        0 | Constant 1.0
-      20        0 | Subtract
-      21        0 | Global set "y"
-      23        0 | Global get "x"
-      25        0 | Constant 1.0
-      27        0 | Add
-      28        0 | Global set "x"
-      30        0 | Loop back to 8
-      33        0 | Global get "x"
-      35        0 | Return
-      36        0 | Return
+      13        0 | If (false) jump to 36
+      16        0 | Pop
+      17        0 | Global get "y"
+      19        0 | Constant 1.0
+      21        0 | Subtract
+      22        0 | Global set "y"
+      24        0 | Pop
+      25        0 | Global get "x"
+      27        0 | Constant 1.0
+      29        0 | Add
+      30        0 | Global set "x"
+      32        0 | Pop
+      33        0 | Loop back to 8
+      36        0 | Pop
+      37        0 | Global get "x"
+      39        0 | Return
 "#;
         assert_eq!(output, expected);
     }
@@ -1036,7 +1015,7 @@ mod tests {
     #[test]
     fn parse_for_loop_1() {
         let it = Parser::parse(Tokenizer::new(
-            "var x = 0; for (var i = 0; i < 10; i = i + 1;) { x = x + 1; } print x;",
+            "var x = 0; for (var i = 0; i < 10; i = i + 1) { x = x + 1; } print x;",
         ));
 
         let output = it.unwrap().disassemble_into_string("parse for loop 1");
@@ -1048,21 +1027,24 @@ mod tests {
        6        0 | Local var get index(0)
        8        0 | Constant 10.0
       10        0 | Less
-      11        0 | If (true) jump to 27
-      14        0 | Jump to 37
-      17        0 | Local var get index(0)
-      19        0 | Constant 1.0
-      21        0 | Add
-      22        0 | Local var set index(0)
-      24        0 | Loop back to 6
-      27        0 | Global get "x"
-      29        0 | Constant 1.0
-      31        0 | Add
-      32        0 | Global set "x"
-      34        0 | Loop back to 17
-      37        0 | Global get "x"
-      39        0 | Print
-      40        0 | Return
+      11        0 | If (false) jump to 40
+      14        0 | Pop
+      15        0 | Jump to 29
+      18        0 | Local var get index(0)
+      20        0 | Constant 1.0
+      22        0 | Add
+      23        0 | Local var set index(0)
+      25        0 | Pop
+      26        0 | Loop back to 6
+      29        0 | Global get "x"
+      31        0 | Constant 1.0
+      33        0 | Add
+      34        0 | Global set "x"
+      36        0 | Pop
+      37        0 | Loop back to 18
+      40        0 | Pop
+      41        0 | Global get "x"
+      43        0 | Print
 "#;
         assert_eq!(output, expected);
     }
@@ -1078,15 +1060,13 @@ mod tests {
 == parse for loop 2 ==
        0        0 | Constant 10.0
        2        0 | Global define "x"
-       4        0 | If (true) jump to 13
-       7        0 | Jump to 19
-      10        0 | Loop back to 4
-      13        0 | Global get "x"
-      15        0 | Print
-      16        0 | Loop back to 10
-      19        0 | Global get "x"
-      21        0 | Return
-      22        0 | Return
+       4        0 | Jump to 10
+       7        0 | Loop back to 4
+      10        0 | Global get "x"
+      12        0 | Print
+      13        0 | Loop back to 7
+      16        0 | Global get "x"
+      18        0 | Return
 "#;
         assert_eq!(output, expected);
     }

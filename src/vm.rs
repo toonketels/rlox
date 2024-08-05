@@ -262,7 +262,8 @@ impl<'a> Vm<'a> {
                     let name = self.read_global_name()?;
                     // we dont pop from the stack according to the book
                     // that seems odd so we dont
-                    let value = self.pop_stack()?;
+                    // => We dont because this is an expression statement which will auto pop the stack
+                    let value = self.peek_stack(0).ok_or(StackUnderflowError)?.clone();
                     if let std::collections::hash_map::Entry::Occupied(mut e) =
                         self.globals.entry(name)
                     {
@@ -286,7 +287,8 @@ impl<'a> Vm<'a> {
                     let at = self.read_byte().ok_or(RuntimeError)?;
                     // According to the book, we should just peek the stack to not modify if but
                     // then our stack just keeps growing so better pop it.
-                    let value = self.pop_stack()?;
+                    // => We dont because this is an expression statement which will auto pop the stack
+                    let value = self.peek_stack(0).ok_or(StackUnderflowError)?;
                     self.stack.set(at as usize, value.clone());
                 }
 
@@ -303,7 +305,7 @@ impl<'a> Vm<'a> {
                     // which we need if we dont jump so the next instruction to fetch
                     // on true if the on true block
                     let distance = self.read_jump().ok_or(RuntimeError)?;
-                    if !self.pop_stack()?.is_truthy() {
+                    if !self.peek_stack(0).ok_or(StackUnderflowError)?.is_truthy() {
                         self.jump_forward(distance)
                     }
                 }
@@ -312,7 +314,7 @@ impl<'a> Vm<'a> {
                     // which we need if we dont jump so the next instruction to fetch
                     // on false if the on false block
                     let distance = self.read_jump().ok_or(RuntimeError)?;
-                    if self.pop_stack()?.is_truthy() {
+                    if self.peek_stack(0).ok_or(StackUnderflowError)?.is_truthy() {
                         self.jump_forward(distance)
                     }
                 }
@@ -382,123 +384,147 @@ mod tests {
 
     #[test]
     fn interpret_math_expression_with_precedence() {
-        interpret_result(vec![("10 + 30 * 2", 70.0)]);
+        interpret_result(vec![("return 10 + 30 * 2;", 70.0)]);
     }
 
     #[test]
     fn interpret_booleans() {
-        interpret_result(vec![("true", true), ("false", false)])
+        interpret_result(vec![("return true;", true), ("return false;", false)])
     }
 
     #[test]
     fn interpret_nil() {
-        interpret_result(vec![("nil", Returned::Nil)])
+        interpret_result(vec![
+            ("return nil;", Returned::Nil),
+            ("return;", Returned::Nil),
+        ])
     }
 
     #[test]
     fn interpret_not() {
         interpret_result(vec![
-            ("!false", true),
-            ("!true", false),
-            ("!!true", true),
-            ("!!false", false),
-            ("!(5 == 5)", false),
-            ("!nil", true),
-            ("!0", true),
-            ("!1", false),
-            ("!-1", false),
+            ("return !false;", true),
+            ("return !true;", false),
+            ("return !!true;", true),
+            ("return !!false;", false),
+            ("return !(5 == 5);", false),
+            ("return !nil;", true),
+            ("return !0;", true),
+            ("return !1;", false),
+            ("return !-1;", false),
         ])
     }
 
     #[test]
     fn interpret_equal() {
         interpret_result(vec![
-            ("100 == 100", true),
-            ("100 == 10", false),
-            ("true == true", true),
-            ("true == false", false),
-            ("nil == nil", true),
-            ("true == 10", false),
-            ("100 == nil", false),
-            ("false == nil", false),
-            ("true == 1", false),
+            ("return 100 == 100;", true),
+            ("return 100 == 10;", false),
+            ("return true == true;", true),
+            ("return true == false;", false),
+            ("return nil == nil;", true),
+            ("return true == 10;", false),
+            ("return 100 == nil;", false),
+            ("return false == nil;", false),
+            ("return true == 1;", false),
         ])
     }
 
     #[test]
     fn interpret_not_equal() {
         interpret_result(vec![
-            ("100 != 100", false),
-            ("100 != 10", true),
-            ("true != true", false),
-            ("true != false", true),
-            ("nil != nil", false),
-            ("true != 10", true),
-            ("100 != nil", true),
-            ("false != nil", true),
-            ("true != 1", true),
+            ("return 100 != 100;", false),
+            ("return 100 != 10;", true),
+            ("return true != true;", false),
+            ("return true != false;", true),
+            ("return nil != nil;", false),
+            ("return true != 10;", true),
+            ("return 100 != nil;", true),
+            ("return false != nil;", true),
+            ("return true != 1;", true),
         ]);
     }
 
     #[test]
     fn interpret_greater() {
         interpret_result(vec![
-            ("100 > 100", false),
-            ("100 > 10", true),
-            ("10 > 100", false),
+            ("return 100 > 100;", false),
+            ("return 100 > 10;", true),
+            ("return 10 > 100;", false),
         ])
     }
 
     #[test]
     fn interpret_greater_equal() {
         interpret_result(vec![
-            ("100 >= 100", true),
-            ("100 >= 10", true),
-            ("10 >= 100", false),
+            ("return 100 >= 100;", true),
+            ("return 100 >= 10;", true),
+            ("return 10 >= 100;", false),
         ])
     }
 
     #[test]
     fn interpret_less() {
         interpret_result(vec![
-            ("100 < 100", false),
-            ("100 < 10", false),
-            ("10 < 100", true),
+            ("return 100 < 100;", false),
+            ("return 100 < 10;", false),
+            ("return 10 < 100;", true),
         ])
     }
     #[test]
     fn interpret_less_equal() {
         interpret_result(vec![
-            ("100 <= 100", true),
-            ("100 <= 10", false),
-            ("10 <= 100", true),
+            ("return 100 <= 100;", true),
+            ("return 100 <= 10;", false),
+            ("return 10 <= 100;", true),
         ])
     }
+
+    #[test]
+    fn interpret_and_expression() {
+        interpret_result(vec![
+            ("return true and false;", false),
+            ("return true and true;", true),
+            ("return false and true;", false),
+            ("return false and false;", false),
+        ])
+    }
+
+    #[test]
+    fn interpret_or_expression() {
+        interpret_result(vec![
+            ("return true or false;", true),
+            ("return true or true;", true),
+            ("return false or true;", true),
+            ("return false or false;", false),
+        ])
+    }
+
     #[test]
     fn interpret_expression() {
-        interpret_result(vec![("!(5 - 4 > 3 * 2 == !nil)", true)])
+        interpret_result(vec![("return !(5 - 4 > 3 * 2 == !nil);", true)])
     }
 
     #[test]
     fn interpret_strings() {
-        interpret_result(vec![("\"hello world\"", "hello world")]);
+        interpret_result(vec![("return \"hello world\";", "hello world")]);
     }
 
     #[test]
     fn interpret_string_equality() {
         interpret_result(vec![
-            ("\"ok\" == \"ok\"", true),
-            ("\"ok\" == \"nok\"", false),
-            ("\"ok\" != \"nok\"", true),
-            ("\"ok\" != \"ok\"", false),
+            ("return \"ok\" == \"ok\";", true),
+            ("return \"ok\" == \"nok\";", false),
+            ("return \"ok\" != \"nok\";", true),
+            ("return \"ok\" != \"ok\";", false),
         ])
     }
 
     #[test]
     fn interpret_string_concatenation() {
         interpret_result(vec![
-            ("\"hello \" + \"world\"", "hello world"),
-            ("\"hello\" + \" \"  + \"world\"", "hello world"),
+            ("return \"hello \" + \"world\";", "hello world"),
+            ("return \"hello\" + \" \"  + \"world\";", "hello world"),
         ])
     }
 
@@ -515,16 +541,22 @@ mod tests {
 
         interpret_result(vec![
             ("return \"hello \" + \"world\";", "hello world"),
-            ("\"hello\" + \" \"  + \"world\"", "hello world"),
+            ("return \"hello\" + \" \"  + \"world\";", "hello world"),
         ])
     }
 
     #[test]
     fn interpret_var_statements() {
-        interpret_result(vec![(
-            "var summed = 5 + 2; print summed *2; return summed * 2;",
-            14.0,
-        )]);
+        interpret_result(vec![
+            (
+                "var summed = 5 + 2; print summed *2; return summed * 2;",
+                14.0,
+            ),
+            (
+                "var a; var b; var c; a = 5; b = 2; c = a + b; print c *2; return c * 2;",
+                14.0,
+            ),
+        ]);
     }
 
     #[test]
@@ -587,8 +619,8 @@ mod tests {
     #[test]
     fn interpret_block_statements_6() {
         interpret_result(vec![(
-            "var z; { var x; var y; x = 10; y = 20; z = y; } return z;",
-            20.0,
+            "var z; { var x; var y; x = 10; y = 20; z = x + y; } return z;",
+            30.0,
         )]);
     }
 
@@ -603,31 +635,31 @@ mod tests {
     #[test]
     fn interpret_if_statement_true() {
         interpret_result(vec![(
-            "if (true){ var x = 3; var y = 5; return y * 2; } var x = 5; return x +2;",
-            10.0,
+            "var z = 2; if (true) { var x = 3; var y = 5; z = x + y; } return z;",
+            8.0,
         )]);
     }
 
     #[test]
     fn interpret_if_statement_false() {
         interpret_result(vec![(
-            "if (false){ var x = 3; var y = 5; return y; } var x = 5; return x +2;",
-            7.0,
+            "var z = 2; if (false) { var x = 3; var y = 5; z = x + y; } return z;",
+            2.0,
         )]);
     }
 
     #[test]
     fn interpret_if_else_statement_true() {
         interpret_result(vec![(
-            "if (true){ var x = 3; var y = 5; } else { return 200; } var x = 5; return x +2;",
-            7.0,
+            "var z = 2; if (true) { var x = 3; var y = 5; z = x + y; } else { z = 200; }return z;",
+            8.0,
         )]);
     }
 
     #[test]
     fn interpret_if_else_statement_false() {
         interpret_result(vec![(
-            "if (false){ var x = 3; var y = 5; } else { return 200; } var x = 5; return x +2;",
+            "var z = 2; if (false) { var x = 3; var y = 5; z = x + y; } else { z = 200; }return z;",
             200.0,
         )]);
     }
@@ -638,16 +670,6 @@ mod tests {
             "if (false){ var x = 3; var y = 5; } else { var y = 100; } var x = 5; return x +2;",
             7.0,
         )]);
-    }
-
-    #[test]
-    fn interpret_and_expression() {
-        interpret_result(vec![
-            ("true and false", false),
-            ("true and true", true),
-            ("false and true", false),
-            ("false and false", false),
-        ])
     }
 
     #[test]
@@ -669,23 +691,17 @@ mod tests {
     }
 
     #[test]
-    fn interpret_or_expression() {
-        interpret_result(vec![
-            ("true or false", true),
-            ("true or true", true),
-            ("false or true", true),
-            ("false or false", false),
-        ])
-    }
-
-    #[test]
     fn interpret_for_loop() {
         interpret_result(vec![
             (
-                "var x = 0; for (var i = 0; i < 10; i = i + 1;) { x = x + 1; } return x;",
+                "var x = 0; for (var i = 0; i < 10; i = i + 1) { x = x + 1; } return x;",
                 10.0,
             ),
             ("var x = 0; for (; x < 10;) { x = x + 1; } return x;", 10.0),
+            (
+                "var x = 0; for (;;) { x = x + 1; if (x >= 10) return x; } return x;",
+                10.0,
+            ),
         ])
     }
 
