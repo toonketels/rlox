@@ -94,7 +94,6 @@ impl<'a> Parser<'a> {
             TokenKind::LeftParen => self.parse_grouping(),
             TokenKind::Minus | TokenKind::Bang => self.parse_unary(),
             TokenKind::Identifier => self.parse_named_variable(precedence),
-            TokenKind::Return => self.parse_return(),
             it => {
                 println!("token not handled: {:?}", it);
                 todo!()
@@ -414,10 +413,11 @@ impl<'a> Parser<'a> {
     fn parse_statement(&mut self) -> Result<(), InterpretError> {
         match self.current()?.kind {
             TokenKind::Print => self.parse_print_statement(),
-            TokenKind::LeftBrace => self.parse_block(),
+            TokenKind::LeftBrace => self.parse_block_statement(),
             TokenKind::If => self.parse_if_statement(),
             TokenKind::While => self.parse_while_statement(),
-            TokenKind::For => self.parse_for_loop(),
+            TokenKind::For => self.parse_for_loop_statement(),
+            TokenKind::Return => self.parse_return_statement(),
             // @TODO replace parse_expression by parse_expression_statement and no longer return value from interpret
             _ => self.parse_expression(0),
             // _ => self.parse_expression_statement(),
@@ -475,7 +475,7 @@ impl<'a> Parser<'a> {
     }
 
     // parses block statement like `{ var x = 34; }
-    fn parse_block(&mut self) -> Result<(), InterpretError> {
+    fn parse_block_statement(&mut self) -> Result<(), InterpretError> {
         self.advance();
         self.compiler.begin_scope()?;
 
@@ -503,7 +503,7 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn parse_return(&mut self) -> Result<(), InterpretError> {
+    fn parse_return_statement(&mut self) -> Result<(), InterpretError> {
         self.advance();
 
         match self.current()?.kind {
@@ -618,7 +618,7 @@ impl<'a> Parser<'a> {
         self.chunk.code.len()
     }
 
-    fn parse_for_loop(&mut self) -> Result<(), InterpretError> {
+    fn parse_for_loop_statement(&mut self) -> Result<(), InterpretError> {
         // for (initializer; condition; modifier) { block; } exit
 
         self.compiler.begin_scope()?;
