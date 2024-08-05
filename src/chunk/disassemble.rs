@@ -22,8 +22,8 @@ impl Chunk {
     }
 
     fn disassemble_buffer<W: Write>(&self, buffer: &mut W, name: &str) {
-        writeln!(buffer);
-        writeln!(buffer, "== {} ==", name);
+        writeln!(buffer).unwrap();
+        writeln!(buffer, "== {} ==", name).unwrap();
 
         let mut n = 0;
         loop {
@@ -51,7 +51,7 @@ impl Chunk {
                     .read_constant(at + 1)
                     .unwrap_or_else(|| panic!("Constant at index {:?} should exist", at + 1));
 
-                writeln!(buffer, "{:8} {:8} | Constant {:?}", at, line, c);
+                writeln!(buffer, "{:8} {:8} | Constant {:?}", at, line, c).unwrap();
 
                 at + 2
             }
@@ -65,7 +65,7 @@ impl Chunk {
                     .read_string(at + 1)
                     .unwrap_or_else(|| panic!("String at index {:?} should exist", at + 1));
 
-                writeln!(buffer, "{:8} {:8} | String {:?}", at, line, c);
+                writeln!(buffer, "{:8} {:8} | String {:?}", at, line, c).unwrap();
 
                 at + 2
             }
@@ -91,7 +91,7 @@ impl Chunk {
                     .read_string(at + 1)
                     .unwrap_or_else(|| panic!("String at index {:?} should exist", at + 1));
 
-                writeln!(buffer, "{:8} {:8} | Global define {:?}", at, line, c);
+                writeln!(buffer, "{:8} {:8} | Global define {:?}", at, line, c).unwrap();
 
                 at + 2
             }
@@ -100,7 +100,7 @@ impl Chunk {
                     .read_string(at + 1)
                     .unwrap_or_else(|| panic!("String at index {:?} should exist", at + 1));
 
-                writeln!(buffer, "{:8} {:8} | Global get {:?}", at, line, c);
+                writeln!(buffer, "{:8} {:8} | Global get {:?}", at, line, c).unwrap();
 
                 at + 2
             }
@@ -109,7 +109,7 @@ impl Chunk {
                     .read_string(at + 1)
                     .unwrap_or_else(|| panic!("String at index {:?} should exist", at + 1));
 
-                writeln!(buffer, "{:8} {:8} | Global set {:?}", at, line, c);
+                writeln!(buffer, "{:8} {:8} | Global set {:?}", at, line, c).unwrap();
 
                 at + 2
             }
@@ -120,7 +120,8 @@ impl Chunk {
                     buffer,
                     "{:8} {:8} | Local var get index({:?})",
                     at, line, index
-                );
+                )
+                .unwrap();
                 at + 2
             }
             SetLocal => {
@@ -129,7 +130,8 @@ impl Chunk {
                     buffer,
                     "{:8} {:8} | Local var set index({:?})",
                     at, line, index
-                );
+                )
+                .unwrap();
                 at + 2
             }
 
@@ -147,7 +149,8 @@ impl Chunk {
     }
 
     fn simple_instruction<W: Write>(name: &str, buffer: &mut W, at: usize, line: usize) -> usize {
-        writeln!(buffer, "{:8} {:8} | {}", at, line, name);
+        writeln!(buffer, "{:8} {:8} | {}", at, line, name)
+            .expect("simple instruction write to buffer");
         at + 1
     }
 

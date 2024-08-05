@@ -138,10 +138,6 @@ impl<'a> Vm<'a> {
         self.stack.peek(offset)
     }
 
-    fn peek_stack_expected(&mut self, offset: usize) -> Result<&Value, InterpretError> {
-        self.peek_stack(offset).ok_or(StackUnderflowError)
-    }
-
     pub fn run(&mut self) -> Result<Value, InterpretError> {
         macro_rules! binary_op_number {
             ($op:tt) => {

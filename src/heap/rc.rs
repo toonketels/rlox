@@ -32,8 +32,4 @@ impl RcHeap {
     pub fn free_all(&mut self) {
         self.objects.clear();
     }
-
-    pub fn size(&self) -> usize {
-        self.objects.len()
-    }
 }

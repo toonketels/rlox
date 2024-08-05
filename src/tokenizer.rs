@@ -90,10 +90,6 @@ impl<'a> Token<'a> {
     pub fn is_kind(&self, kind: TokenKind) -> bool {
         self.kind == kind
     }
-
-    pub fn line(&self) -> usize {
-        self.line
-    }
 }
 
 #[derive(Debug)]
@@ -124,10 +120,12 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
+    #[cfg(test)]
     fn rest(&self) -> &'a str {
         &self.source[self.current..]
     }
 
+    #[cfg(test)]
     fn line(&self) -> usize {
         self.line
     }
@@ -145,6 +143,7 @@ impl<'a> Tokenizer<'a> {
         self.line += 1;
     }
 
+    #[cfg(test)]
     fn drop_byte(&mut self) {
         self.advance_byte();
     }
@@ -159,6 +158,7 @@ impl<'a> Tokenizer<'a> {
         }
     }
 
+    #[cfg(test)]
     fn take_bytes(&mut self, amount: usize) -> Option<&str> {
         let current = self.current;
         if self.current + amount > self.as_bytes.len() {

@@ -15,15 +15,12 @@ pub enum Obj {
 
 impl Obj {
     pub fn is_string(&self) -> bool {
-        matches!(self, Obj::String { str })
+        matches!(self, Obj::String { str: _ })
     }
 
     pub fn as_string(&self) -> &str {
-        if let Obj::String { str } = self {
-            str.as_ref()
-        } else {
-            panic!("Obj is not a string")
-        }
+        let Obj::String { str } = self;
+        str.as_ref()
     }
 }
 
@@ -112,7 +109,7 @@ impl Value {
             Value::Nil => false,
             Value::Bool(it) => *it,
             Value::Number(it) => *it != 0.0, // all number are truthy expect for 0
-            Value::Object(it) => false,      // @TODO revisit it
+            Value::Object(_) => false,       // @TODO revisit it
         }
     }
     pub fn is_nil(&self) -> bool {

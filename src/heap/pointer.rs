@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::opcode::Obj;
 use std::ptr::NonNull;
 

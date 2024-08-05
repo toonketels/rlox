@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::opcode::Obj;
 
 // Heap implementation that just returns an offset into the heap (it 'address')

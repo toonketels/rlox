@@ -59,7 +59,7 @@ impl<'a> Parser<'a> {
     fn expect(&self, expected: TokenKind, error: &'static str) -> Result<(), InterpretError> {
         match self.current()?.kind {
             it if it == expected => Ok(()),
-            received => Err(RuntimeErrorWithReason(error)),
+            _ => Err(RuntimeErrorWithReason(error)),
         }
     }
 
@@ -142,10 +142,10 @@ impl<'a> Parser<'a> {
             .current()?
             .source
             .parse::<f64>()
-            .map_err(|it| CompileError(ParseFloatError))?;
+            .map_err(|_| CompileError(ParseFloatError))?;
         let line = self.line;
         self.advance();
-        self.emit_constant(Number(it), line);
+        self.emit_constant(Number(it), line)?;
         Ok(())
     }
 
@@ -160,7 +160,7 @@ impl<'a> Parser<'a> {
             .to_string();
         let line = self.line;
         self.advance();
-        self.emit_string(it, line);
+        self.emit_string(it, line)?;
         Ok(())
     }
 
@@ -197,7 +197,7 @@ impl<'a> Parser<'a> {
 
     fn parse_grouping(&mut self) -> Result<(), InterpretError> {
         self.advance(); // consume '('
-        self.parse_expression(0);
+        self.parse_expression(0)?;
         match self.current()?.kind {
             TokenKind::RightParen => self.advance(), // consume ')'
             _ => Err(CompileError(ExpectedRightParen))?,
@@ -212,12 +212,12 @@ impl<'a> Parser<'a> {
         match kind {
             TokenKind::Minus => {
                 self.advance();
-                self.parse_expression(self.precedence(kind));
+                self.parse_expression(self.precedence(kind))?;
                 self.emit_op_code(OpCode::Negate, line)?
             }
             TokenKind::Bang => {
                 self.advance();
-                self.parse_expression(self.precedence(kind));
+                self.parse_expression(self.precedence(kind))?;
                 self.emit_op_code(OpCode::Not, line)?
             }
             _ => Err(CompileError(ExpectedPrefix))?,
@@ -304,7 +304,7 @@ impl<'a> Parser<'a> {
             TokenKind::And => self.parse_and_expression(),
             TokenKind::Or => self.parse_or_expression(),
             _ => Err(CompileError(ExpectedBinaryOperator))?,
-        };
+        }?;
 
         Ok(())
     }
@@ -378,11 +378,6 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn emit_return(&mut self, line: usize) -> Result<(), InterpretError> {
-        self.emit_op_code(OpCode::Return, line)?;
-        Ok(())
-    }
-
     // Returns the code address to patch
     fn emit_jump(&mut self, op_code: OpCode) -> Result<usize, InterpretError> {
         self.chunk.write_jump(op_code, self.line)
@@ -422,13 +417,13 @@ impl<'a> Parser<'a> {
     fn parse_print_statement(&mut self) -> Result<(), InterpretError> {
         self.advance();
         self.parse_expression(0)?;
-        self.expect_advance(TokenKind::Semicolon, "Expected ';' after value");
+        self.expect_advance(TokenKind::Semicolon, "Expected ';' after value")?;
         self.emit_op_code(OpCode::Print, self.line)
     }
 
     // Evaluates the expression and throws away the result
     fn parse_expression_statement(&mut self) -> Result<(), InterpretError> {
-        self.parse_expression(0);
+        self.parse_expression(0)?;
         self.expect_advance(TokenKind::Semicolon, "Expected ';' after value")?;
         self.emit_op_code(OpCode::Pop, self.line)
     }
@@ -488,7 +483,7 @@ impl<'a> Parser<'a> {
             local_vars_to_pop -= 1;
         }
 
-        self.expect_advance(TokenKind::RightBrace, "Expect '}' after block");
+        self.expect_advance(TokenKind::RightBrace, "Expect '}' after block")?;
 
         Ok(())
     }
@@ -504,7 +499,7 @@ impl<'a> Parser<'a> {
         match self.current()?.kind {
             TokenKind::Semicolon => self.emit_op_code(Nil, self.line),
             _ => self.parse_expression(0),
-        };
+        }?;
 
         self.expect_advance(
             TokenKind::Semicolon,
@@ -519,7 +514,7 @@ impl<'a> Parser<'a> {
 
         // condition
         self.expect_advance(TokenKind::LeftParen, "Expect '(' after if")?;
-        self.parse_expression(0);
+        self.parse_expression(0)?;
         self.expect_advance(TokenKind::RightParen, "Expect ')' after if condition")?;
 
         // jump to else
@@ -531,15 +526,15 @@ impl<'a> Parser<'a> {
         let jump_to_continue = self.emit_jump(OpCode::Jump)?;
 
         // else
-        self.patch_jump(jump_to_else);
+        self.patch_jump(jump_to_else)?;
         self.emit_op_code(OpCode::Pop, self.line)?; // take the condition from the stack
         if self.current()?.kind == TokenKind::Else {
             self.advance(); // consume else
-            self.parse_statement();
+            self.parse_statement()?;
         }
 
         // continue
-        self.patch_jump(jump_to_continue);
+        self.patch_jump(jump_to_continue)?;
 
         Ok(())
     }
@@ -552,7 +547,7 @@ impl<'a> Parser<'a> {
 
         // condition
         self.expect_advance(TokenKind::LeftParen, "Expect '(' after while")?;
-        self.parse_expression(0);
+        self.parse_expression(0)?;
         self.expect_advance(TokenKind::RightParen, "Expect ')' after while condition")?;
 
         // exit loop
@@ -564,7 +559,7 @@ impl<'a> Parser<'a> {
         self.emit_loop(loop_start)?;
 
         // exit
-        self.patch_jump(jump_to_exit);
+        self.patch_jump(jump_to_exit)?;
         self.emit_op_code(OpCode::Pop, self.line)?; // pop condition of stack
         Ok(())
     }
@@ -671,7 +666,7 @@ impl<'a> Parser<'a> {
         // exit
         if let Some(offset) = to_exit {
             self.patch_jump(offset)?;
-            self.emit_op_code(OpCode::Pop, self.line);
+            self.emit_op_code(OpCode::Pop, self.line)?;
         }
 
         self.compiler.end_scope()?;
@@ -884,7 +879,7 @@ mod tests {
       14        0 | Jump to 18
       17        0 | Pop
       18        0 | Constant 5.0
-      20        0 | Returng
+      20        0 | Return
 "#;
         assert_eq!(output, expected);
     }

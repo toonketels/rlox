@@ -9,13 +9,12 @@ pub fn repl() -> Result<(), InterpretError> {
     println!("> Rlox repl:");
     loop {
         print!("> ");
-        stdout().flush();
+        stdout().flush()?;
         stdin().read_line(&mut line)?;
         let input = line.clone();
         line.clear();
-        interpret_line(input);
+        interpret_line(input)?;
     }
-    Ok(())
 }
 
 // Dummy implementation that evaluates just the current line, not taking into account
